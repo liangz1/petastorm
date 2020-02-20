@@ -2,7 +2,7 @@ from pyspark.sql import SparkSession
 from pyspark.sql.types import StructType, StructField, \
     BooleanType, FloatType, ShortType, IntegerType, LongType, DoubleType
 
-from petastorm.spark.spark_dataset_converter import spark_df_to_tf_dataset
+from petastorm.spark.spark_dataset_converter import make_spark_converter
 
 import tensorflow as tf
 import numpy as np
@@ -32,12 +32,12 @@ class TfConverterTest(unittest.TestCase):
             (False, 123.45, 0.987, 9, 908, 765)],
             schema=schema)
 
-        dataset = spark_df_to_tf_dataset(df)
-
-        iterator = dataset.make_one_shot_iterator()
-        tensor = iterator.get_next()
-        with tf.Session() as sess:
-            ts = sess.run(tensor)
+        converter = make_spark_converter(df)
+        with converter.make_tf_dataset() as dataset:
+            iterator = dataset.make_one_shot_iterator()
+            tensor = iterator.get_next()
+            with tf.Session() as sess:
+                ts = sess.run(tensor)
 
         assert (ts.bool_col.dtype.type == np.bool_)
         assert (ts.float_col.dtype.type == np.float32)
