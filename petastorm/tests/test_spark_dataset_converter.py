@@ -18,7 +18,6 @@ class TfConverterTest(unittest.TestCase):
             .getOrCreate()
 
     def test_primitive(self):
-        # test primitive columns
         schema = StructType([
             StructField("bool_col", BooleanType(), False),
             StructField("float_col", FloatType(), False),

@@ -1,13 +1,9 @@
-from pyspark.sql.session import SparkSession
-
 from petastorm import make_batch_reader
-from petastorm.reader import Reader
 from petastorm.tf_utils import make_petastorm_dataset
-from pyspark.sql.dataframe import DataFrame
+from pyspark.sql.session import SparkSession
 
 import os
 import shutil
-import tensorflow as tf
 import uuid
 
 DEFAULT_CACHE_DIR = "/tmp/spark-converter"
@@ -20,9 +16,10 @@ class SparkDatasetConverter(object):
     The `SparkDatasetConverter` object is picklable and can be used in remote processes.
     See `make_spark_converter`
     """
-    def __init__(self, cache_file_path: str, dataset_size: int):
+    def __init__(self, cache_file_path, dataset_size):
         """
-        :param cache_file_path: The path to store the cache files.
+        :param cache_file_path: A string denoting the path to store the cache files.
+        :param dataset_size: An int denoting the number of rows in the dataframe.
         """
         self.cache_file_path = cache_file_path
         self.dataset_size = dataset_size
@@ -37,18 +34,20 @@ class SparkDatasetConverter(object):
     def delete(self):
         """
         Delete cache files at self.cache_file_path.
-        :return:
         """
         shutil.rmtree(self.cache_file_path, ignore_errors=True)
 
 
 class tf_dataset_context_manager:
 
-    def __init__(self, reader: Reader):
+    def __init__(self, reader):
+        """
+        :param reader: A :class:`petastorm.reader.Reader` object.
+        """
         self.reader = reader
         self.dataset = make_petastorm_dataset(reader)
 
-    def __enter__(self) -> tf.data.Dataset:
+    def __enter__(self):
         return self.dataset
 
     def __exit__(self, exc_type, exc_value, exc_traceback):
@@ -56,14 +55,14 @@ class tf_dataset_context_manager:
         self.reader.join()
 
 
-def _cache_df_or_retrieve_cache_path(df: DataFrame, cache_dir: str) -> str:
+def _cache_df_or_retrieve_cache_path(df, cache_dir):
     """
     Check whether the df is cached.
     If so, return the existing cache file path.
     If not, cache the df into the cache_dir in parquet format and return the cache file path.
     :param df:        A :class:`DataFrame` object.
-    :param cache_dir: The directory for the saved parquet file, could be local, hdfs, dbfs, ...
-    :return:          The path of the saved parquet file.
+    :param cache_dir: A string denoting the directory for the saved parquet file.
+    :return:          A string denoting the path of the saved parquet file.
     """
     uuid_str = str(uuid.uuid4())
     save_to_dir = os.path.join(cache_dir, uuid_str)
@@ -78,7 +77,7 @@ def _cache_df_or_retrieve_cache_path(df: DataFrame, cache_dir: str) -> str:
     return save_to_dir
 
 
-def make_spark_converter(df: DataFrame, cache_dir=None) -> SparkDatasetConverter:
+def make_spark_converter(df, cache_dir=None):
     """
     Convert a spark dataframe into a :class:`SparkDatasetConverter` object. It will materialize
     a spark dataframe to a `cache_dir` or a default cache directory.
@@ -86,7 +85,7 @@ def make_spark_converter(df: DataFrame, cache_dir=None) -> SparkDatasetConverter
     can be used to make one or more tensorflow datasets or torch dataloaders.
 
     :param df:        The :class:`DataFrame` object to be converted.
-    :param cache_dir: The parent directory to store intermediate files.
+    :param cache_dir: A string denoting the parent directory to store intermediate files.
                       Default None, it will fallback to the spark config
                       "spark.petastorm.converter.default.cache.dir".
                       If the spark config is empty, it will fallback to DEFAULT_CACHE_DIR.
