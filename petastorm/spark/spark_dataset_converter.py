@@ -23,14 +23,15 @@ class SparkDatasetConverter(object):
     The `SparkDatasetConverter` object is picklable and can be used in remote processes.
     See `make_spark_converter`
     """
-    def __init__(self, cache_file_path: str):
+    def __init__(self, cache_file_path: str, dataset_size: int):
         """
         :param cache_file_path: The path to store the cache files.
         """
         self.cache_file_path = cache_file_path
+        self.dataset_size = dataset_size
 
     def __len__(self):
-        return 0  # todo
+        return self.dataset_size
 
     def make_tf_dataset(self):
         reader = make_batch_reader("file://" + self.cache_file_path)
@@ -107,5 +108,6 @@ def make_spark_converter(df: DataFrame, cache_dir=None) -> SparkDatasetConverter
     if cache_dir is None:
         cache_dir = SparkSession.builder.getOrCreate().conf \
             .get("spark.petastorm.converter.default.cache.dir", DEFAULT_CACHE_DIR)
+    dataset_size = df.count()
     cache_file_path = _cache_df_or_retrieve_cache_path(df, cache_dir)
-    return SparkDatasetConverter(cache_file_path)
+    return SparkDatasetConverter(cache_file_path, dataset_size)
