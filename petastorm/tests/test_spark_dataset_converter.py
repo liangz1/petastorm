@@ -38,13 +38,21 @@ class TfConverterTest(unittest.TestCase):
             tensor = iterator.get_next()
             with tf.Session() as sess:
                 ts = sess.run(tensor)
+                try:
+                    sess.run(iterator.get_next())
+                except tf.errors.OutOfRangeError:
+                    self.fail("The tf.data.Dataset cannot read all the rows from the spark dataframe.")
 
-        assert (ts.bool_col.dtype.type == np.bool_)
-        assert (ts.float_col.dtype.type == np.float32)
-        assert (ts.double_col.dtype.type == np.float64)
-        assert (ts.short_col.dtype.type == np.int16)
-        assert (ts.int_col.dtype.type == np.int32)
-        assert (ts.long_col.dtype.type == np.int64)
+                def error_fn():
+                    sess.run(iterator.get_next())
+                self.assertRaises(tf.errors.OutOfRangeError, error_fn, "The iterator reads unexpected rows.")
+
+        self.assertEquals(ts.bool_col.dtype.type, np.bool_, "Boolean type column is not inferred correctly.")
+        self.assertEquals(ts.float_col.dtype.type, np.float32, "Float type column is not inferred correctly.")
+        self.assertEquals(ts.double_col.dtype.type, np.float64, "Double type column is not inferred correctly.")
+        self.assertEquals(ts.short_col.dtype.type, np.int16, "Short type column is not inferred correctly.")
+        self.assertEquals(ts.int_col.dtype.type, np.int32, "Integer type column is not inferred correctly.")
+        self.assertEquals(ts.long_col.dtype.type, np.int64, "Long type column is not inferred correctly.")
 
     def test_delete(self):
         test_path = "/tmp/petastorm_test"
