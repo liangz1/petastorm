@@ -33,15 +33,14 @@ class TfConverterTest(unittest.TestCase):
         expected_df = df.collect()
 
         converter = make_spark_converter(df)
-        batch_count = 1     # Since the dataset_len is small and parquet row group size is large.
         with converter.make_tf_dataset() as dataset:
             iterator = dataset.make_one_shot_iterator()
             tensor = iterator.get_next()
             with tf.Session() as sess:
-                for i in range(batch_count):
-                    ts = sess.run(tensor)
-                    for col in df.schema.names:
-                        self.assertEquals(getattr(ts, col)[i], expected_df[i][col])
+                ts = sess.run(tensor)
+            for i in range(converter.dataset_size):
+                for col in df.schema.names:
+                    self.assertEquals(getattr(ts, col)[i], expected_df[i][col])
 
         self.assertEquals(ts.bool_col.dtype.type, np.bool_, "Boolean type column is not inferred correctly.")
         self.assertEquals(ts.float_col.dtype.type, np.float32, "Float type column is not inferred correctly.")
