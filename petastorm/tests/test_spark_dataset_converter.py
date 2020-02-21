@@ -1,11 +1,10 @@
+from petastorm.spark.spark_dataset_converter import make_spark_converter
 from pyspark.sql import SparkSession
 from pyspark.sql.types import StructType, StructField, \
     BooleanType, FloatType, ShortType, IntegerType, LongType, DoubleType
 
-from petastorm.spark.spark_dataset_converter import make_spark_converter
-
-import tensorflow as tf
 import numpy as np
+import tensorflow as tf
 import unittest
 
 
