@@ -7,6 +7,7 @@ import shutil
 import uuid
 
 DEFAULT_CACHE_DIR = "/tmp/spark-converter"
+ROW_GROUP_SIZE = 32 * 1024 * 1024
 
 
 class SparkDatasetConverter(object):
@@ -55,7 +56,7 @@ class tf_dataset_context_manager:
         self.reader.join()
 
 
-def _cache_df_or_retrieve_cache_path(df, cache_dir):
+def _cache_df_or_retrieve_cache_path(df, cache_dir, row_group_size):
     """
     Check whether the df is cached.
     If so, return the existing cache file path.
@@ -67,7 +68,7 @@ def _cache_df_or_retrieve_cache_path(df, cache_dir):
     uuid_str = str(uuid.uuid4())
     save_to_dir = os.path.join(cache_dir, uuid_str)
     df.write.mode("overwrite") \
-        .option("parquet.block.size", 1024 * 1024) \
+        .option("parquet.block.size", row_group_size) \
         .parquet(save_to_dir)
 
     # remove _xxx files, which will break `pyarrow.parquet` loading
@@ -77,7 +78,7 @@ def _cache_df_or_retrieve_cache_path(df, cache_dir):
     return save_to_dir
 
 
-def make_spark_converter(df, cache_dir=None):
+def make_spark_converter(df, cache_dir=None, row_group_size=ROW_GROUP_SIZE):
     """
     Convert a spark dataframe into a :class:`SparkDatasetConverter` object. It will materialize
     a spark dataframe to a `cache_dir` or a default cache directory.
@@ -97,5 +98,5 @@ def make_spark_converter(df, cache_dir=None):
         cache_dir = SparkSession.builder.getOrCreate().conf \
             .get("spark.petastorm.converter.default.cache.dir", DEFAULT_CACHE_DIR)
     dataset_size = df.count()
-    cache_file_path = _cache_df_or_retrieve_cache_path(df, cache_dir)
+    cache_file_path = _cache_df_or_retrieve_cache_path(df, cache_dir, row_group_size)
     return SparkDatasetConverter(cache_file_path, dataset_size)
