@@ -42,12 +42,15 @@ class TfConverterTest(unittest.TestCase):
                 for col in df.schema.names:
                     self.assertEquals(getattr(ts, col)[i], expected_df[i][col])
 
+            self.assertEquals(len(converter), len(expected_df))
+
         self.assertEquals(ts.bool_col.dtype.type, np.bool_, "Boolean type column is not inferred correctly.")
         self.assertEquals(ts.float_col.dtype.type, np.float32, "Float type column is not inferred correctly.")
         self.assertEquals(ts.double_col.dtype.type, np.float64, "Double type column is not inferred correctly.")
         self.assertEquals(ts.short_col.dtype.type, np.int16, "Short type column is not inferred correctly.")
         self.assertEquals(ts.int_col.dtype.type, np.int32, "Integer type column is not inferred correctly.")
         self.assertEquals(ts.long_col.dtype.type, np.int64, "Long type column is not inferred correctly.")
+
 
     def test_delete(self):
         test_path = "/tmp/petastorm_test"
