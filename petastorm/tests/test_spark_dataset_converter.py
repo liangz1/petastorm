@@ -29,8 +29,7 @@ class TfConverterTest(unittest.TestCase):
         ])
         df = self.spark.createDataFrame([
             (True, 0.12, 432.1, 5, 5, 0),
-            (False, 123.45, 0.987, 9, 908, 765)],
-            schema=schema)
+            (False, 123.45, 0.987, 9, 908, 765)], schema=schema)
 
         converter = make_spark_converter(df)
         with converter.make_tf_dataset() as dataset:
@@ -62,6 +61,6 @@ class TfConverterTest(unittest.TestCase):
             f.write("abc")
         with open(os.path.join(test_path, "file2"), "w") as f:
             f.write("123")
-        converter = SparkDatasetConverter(test_path)
+        converter = SparkDatasetConverter(test_path, 0)
         converter.delete()
-        assert(not os.path.exists(test_path))
+        self.assertFalse(not os.path.exists(test_path))
