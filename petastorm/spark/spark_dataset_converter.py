@@ -6,8 +6,6 @@ import numpy as np
 import os
 import tensorflow as tf
 
-assert(tf.version.VERSION == '1.15.0')
-
 # Config
 CACHE_DIR = "/tmp/tf"
 
