@@ -1,9 +1,10 @@
-from petastorm.spark.spark_dataset_converter import make_spark_converter
+from petastorm.spark.spark_dataset_converter import make_spark_converter, SparkDatasetConverter
 from pyspark.sql import SparkSession
 from pyspark.sql.types import StructType, StructField, \
     BooleanType, FloatType, ShortType, IntegerType, LongType, DoubleType
 
 import numpy as np
+import os
 import tensorflow as tf
 import unittest
 
@@ -44,3 +45,15 @@ class TfConverterTest(unittest.TestCase):
         assert (ts.short_col.dtype.type == np.int16)
         assert (ts.int_col.dtype.type == np.int32)
         assert (ts.long_col.dtype.type == np.int64)
+
+    def test_delete(self):
+        test_path = "/tmp/petastorm_test"
+        os.mkdir(test_path)
+        os.mkdir(os.path.join(test_path, "dir1"))
+        with open(os.path.join(test_path, "file1"), "w") as f:
+            f.write("abc")
+        with open(os.path.join(test_path, "file2"), "w") as f:
+            f.write("123")
+        converter = SparkDatasetConverter(test_path)
+        converter.delete()
+        assert(not os.path.exists(test_path))

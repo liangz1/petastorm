@@ -31,9 +31,10 @@ class SparkDatasetConverter:
     The SparkDatasetConverter class manages the intermediate files when converting a SparkDataFrame to a
     Tensorflow Dataset or PyTorch DataLoader.
     """
-    def __init__(self, cache_file_path: str, unischema: Unischema):
+    def __init__(self, cache_file_path: str, unischema: Unischema = None):
         """
         :param cache_file_path: The path to store the cache files.
+        :param unischema: Unischema that contains metadata of the dataset. TODO use this param.
         """
         self.cache_file_path = cache_file_path
         self.unischema = unischema
