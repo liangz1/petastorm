@@ -51,7 +51,6 @@ class TfConverterTest(unittest.TestCase):
         self.assertEquals(ts.int_col.dtype.type, np.int32, "Integer type column is not inferred correctly.")
         self.assertEquals(ts.long_col.dtype.type, np.int64, "Long type column is not inferred correctly.")
 
-
     def test_delete(self):
         test_path = "/tmp/petastorm_test"
         os.mkdir(test_path)
