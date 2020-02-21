@@ -29,22 +29,20 @@ class TfConverterTest(unittest.TestCase):
         ])
         df = self.spark.createDataFrame([
             (True, 0.12, 432.1, 5, 5, 0),
-            (False, 123.45, 0.987, 9, 908, 765)], schema=schema)
+            (False, 123.45, 0.987, 9, 908, 765)], schema=schema).coalesce(1)
+        # If we use numPartition > 1, the order of the loaded dataset would be non-deterministic.
+        expected_df = df.collect()
 
         converter = make_spark_converter(df)
+        batch_count = 1     # Since the dataset_len is small and parquet row group size is large.
         with converter.make_tf_dataset() as dataset:
             iterator = dataset.make_one_shot_iterator()
             tensor = iterator.get_next()
             with tf.Session() as sess:
-                ts = sess.run(tensor)
-                try:
-                    sess.run(iterator.get_next())
-                except tf.errors.OutOfRangeError:
-                    self.fail("The tf.data.Dataset cannot read all the rows from the spark dataframe.")
-
-                def error_fn():
-                    sess.run(iterator.get_next())
-                self.assertRaises(tf.errors.OutOfRangeError, error_fn, "The iterator reads unexpected rows.")
+                for i in range(batch_count):
+                    ts = sess.run(tensor)
+                    for col in df.schema.names:
+                        self.assertEquals(getattr(ts, col)[i], expected_df[i][col])
 
         self.assertEquals(ts.bool_col.dtype.type, np.bool_, "Boolean type column is not inferred correctly.")
         self.assertEquals(ts.float_col.dtype.type, np.float32, "Float type column is not inferred correctly.")
@@ -63,4 +61,4 @@ class TfConverterTest(unittest.TestCase):
             f.write("123")
         converter = SparkDatasetConverter(test_path, 0)
         converter.delete()
-        self.assertFalse(not os.path.exists(test_path))
+        self.assertFalse(os.path.exists(test_path))

@@ -10,7 +10,7 @@ import shutil
 import tensorflow as tf
 import uuid
 
-DEFAULT_CACHE_DIR = "/tmp/spark-converter/"
+DEFAULT_CACHE_DIR = "/tmp/spark-converter"
 
 
 class SparkDatasetConverter(object):
@@ -56,14 +56,6 @@ class tf_dataset_context_manager:
         self.reader.join()
 
 
-def _get_uuid():
-    """
-    Generate a UUID from a host ID, sequence number, and the current time.
-    :return: a string of UUID.
-    """
-    return str(uuid.uuid1())
-
-
 def _cache_df_or_retrieve_cache_path(df: DataFrame, cache_dir: str) -> str:
     """
     Check whether the df is cached.
@@ -73,7 +65,7 @@ def _cache_df_or_retrieve_cache_path(df: DataFrame, cache_dir: str) -> str:
     :param cache_dir: The directory for the saved parquet file, could be local, hdfs, dbfs, ...
     :return:          The path of the saved parquet file.
     """
-    uuid_str = _get_uuid()
+    uuid_str = str(uuid.uuid4())
     save_to_dir = os.path.join(cache_dir, uuid_str)
     df.write.mode("overwrite") \
         .option("parquet.block.size", 1024 * 1024) \
