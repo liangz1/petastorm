@@ -5,13 +5,10 @@ from petastorm.reader import Reader
 from petastorm.tf_utils import make_petastorm_dataset
 from pyspark.sql.dataframe import DataFrame
 
-import numpy as np
 import os
 import shutil
 import tensorflow as tf
 import uuid
-
-assert(tf.version.VERSION == '1.15.0')
 
 DEFAULT_CACHE_DIR = "/tmp/spark-converter/"
 
