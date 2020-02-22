@@ -38,6 +38,8 @@ class TfConverterTest(unittest.TestCase):
             tensor = iterator.get_next()
             with tf.Session() as sess:
                 ts = sess.run(tensor)
+                # TODO: we will improve the test once the batch_size argument added.
+                # Now we only have one batch.
             for i in range(converter.dataset_size):
                 for col in df.schema.names:
                     self.assertEquals(getattr(ts, col)[i], expected_df[i][col])

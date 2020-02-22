@@ -90,13 +90,15 @@ def make_spark_converter(df, cache_dir=None, row_group_size=ROW_GROUP_SIZE):
                       Default None, it will fallback to the spark config
                       "spark.petastorm.converter.default.cache.dir".
                       If the spark config is empty, it will fallback to DEFAULT_CACHE_DIR.
+    :param row_group_size: An int denoting the number of bytes in a parquet row group.
 
     :return: a :class:`SparkDatasetConverter` object that holds the materialized dataframe and
             can be used to make one or more tensorflow datasets or torch dataloaders.
     """
+    spark = SparkSession.builder.getOrCreate()
     if cache_dir is None:
-        cache_dir = SparkSession.builder.getOrCreate().conf \
+        cache_dir = spark.conf \
             .get("spark.petastorm.converter.default.cache.dir", DEFAULT_CACHE_DIR)
-    dataset_size = df.count()
     cache_file_path = _cache_df_or_retrieve_cache_path(df, cache_dir, row_group_size)
+    dataset_size = spark.read.parquet(cache_file_path).count()
     return SparkDatasetConverter(cache_file_path, dataset_size)
