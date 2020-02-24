@@ -1,3 +1,4 @@
+from pathlib import Path
 from petastorm.spark.spark_dataset_converter import make_spark_converter, SparkDatasetConverter
 from pyspark.sql import SparkSession
 from pyspark.sql.types import StructType, StructField, \
@@ -5,6 +6,7 @@ from pyspark.sql.types import StructType, StructField, \
 
 import numpy as np
 import os
+import subprocess
 import tensorflow as tf
 import unittest
 
@@ -67,8 +69,8 @@ class TfConverterTest(unittest.TestCase):
 
     def test_delete(self):
         test_path = "/tmp/petastorm_test"
-        os.mkdir(test_path)
-        os.mkdir(os.path.join(test_path, "dir1"))
+        Path(test_path).mkdir(parents=True, exist_ok=True)
+        Path(os.path.join(test_path, "dir1")).mkdir(parents=True, exist_ok=True)
         with open(os.path.join(test_path, "file1"), "w") as f:
             f.write("abc")
         with open(os.path.join(test_path, "file2"), "w") as f:
@@ -76,3 +78,26 @@ class TfConverterTest(unittest.TestCase):
         converter = SparkDatasetConverter(test_path, 0)
         converter.delete()
         self.assertFalse(os.path.exists(test_path))
+
+    def test_atexit(self):
+        cache_dir = "/tmp/123"
+        Path(cache_dir).mkdir(parents=True, exist_ok=True)
+        lines = """
+            from petastorm.spark.spark_dataset_converter import make_spark_converter
+            from pyspark.sql import SparkSession
+            import os
+            spark = SparkSession.builder.getOrCreate()
+            df = spark.createDataFrame([(1, 2),(4, 5)], ["col1", "col2"])
+            converter = make_spark_converter(df, '/tmp/123')
+            assert(os.path.exists(converter.cache_file_path))
+            f = open("/tmp/123/output", "w")
+            f.write(converter.cache_file_path)
+            f.close()
+            """
+        code_str = "; ".join(line.strip() for line in lines.strip().splitlines())
+        self.assertTrue(os.path.exists(cache_dir))
+        ret_code = subprocess.call(["python", "-c", code_str])
+        self.assertEqual(ret_code, 0)
+        with open(os.path.join(cache_dir, "output")) as f:
+            cache_file_path = f.read()
+        self.assertFalse(os.path.exists(cache_file_path))
