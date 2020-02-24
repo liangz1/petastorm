@@ -31,9 +31,9 @@ class TfConverterTest(unittest.TestCase):
             StructField("bin_col", BinaryType(), False),
             StructField("byte_col", ByteType(), False),
         ])
-        df = self.spark.createDataFrame([
-            (True, 0.12, 432.1, 5, 5, 0, "hello", bytearray(b"spark"), -128),
-            (False, 123.45, 0.987, 9, 908, 765, "petastorm", bytearray(b"12345"), 127)],
+        df = self.spark.createDataFrame(
+            [(True, 0.12, 432.1, 5, 5, 0, "hello", bytearray(b"spark"), -128),
+             (False, 123.45, 0.987, 9, 908, 765, "petastorm", bytearray(b"12345"), 127)],
             schema=schema).coalesce(1)
         # If we use numPartition > 1, the order of the loaded dataset would be non-deterministic.
         expected_df = df.collect()
