@@ -13,16 +13,16 @@
 # limitations under the License.
 
 import os
+from six.moves.urllib.parse import urlparse
 import subprocess
 import unittest
 
 import numpy as np
 import tensorflow as tf
 from pyspark.sql import SparkSession
-from pyspark.sql.types import (BinaryType, BooleanType, ByteType, DoubleType,
-                               FloatType, IntegerType, LongType, ShortType,
-                               StringType, StructField, StructType)
-from six.moves.urllib.parse import urlparse
+from pyspark.sql.types import BinaryType, BooleanType, ByteType, DoubleType, \
+    FloatType, IntegerType, LongType, ShortType, StringType, StructField, \
+    StructType
 
 from petastorm.spark.spark_dataset_converter import make_spark_converter
 
@@ -109,17 +109,25 @@ class TfConverterTest(unittest.TestCase):
     def test_atexit(self):
         cache_dir = "/tmp/spark_converter_test_atexit"
         os.makedirs(cache_dir)
-        current_dir = os.path.dirname(os.path.realpath(__file__))
-        script_path = os.path.join(
-            current_dir, "..", "test_util", "test_atexit_script.py")
-
-        ret_code = subprocess.call(["python", script_path])
-
+        lines = """
+        from petastorm.spark.spark_dataset_converter import make_spark_converter
+        from pyspark.sql import SparkSession
+        import os
+        spark = SparkSession.builder.getOrCreate()
+        df = spark.createDataFrame([(1, 2),(4, 5)], ["col1", "col2"])
+        converter = make_spark_converter(df, 'file:///tmp/spark_converter_test_atexit')
+        f = open("/tmp/spark_converter_test_atexit/output", "w")
+        f.write(converter.cache_file_path)
+        f.close()
+        """
+        code_str = "; ".join(
+            line.strip() for line in lines.strip().splitlines())
+        self.assertTrue(os.path.exists(cache_dir))
+        ret_code = subprocess.call(["python", "-c", code_str])
         self.assertEqual(0, ret_code)
         with open(os.path.join(cache_dir, "output")) as f:
-            cache_file_url = f.read()
-        cache_file_dir = urlparse(cache_file_url).path
-        self.assertFalse(os.path.exists(cache_file_dir))
+            cache_file_path = f.read()
+        self.assertFalse(os.path.exists(cache_file_path))
 
     @staticmethod
     def _get_compression_type(data_url):
