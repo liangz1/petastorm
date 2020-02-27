@@ -191,15 +191,14 @@ def make_spark_converter(
         compression=None):
     """
     Convert a spark dataframe into a :class:`SparkDatasetConverter` object.
-    It will materialize a spark dataframe to a `cache_dir`.
+    It will materialize a spark dataframe to a `cache_dir_url`.
     The returned `SparkDatasetConverter` object will hold the materialized
     dataframe, and can be used to make one or more tensorflow datasets or
     torch dataloaders.
 
     :param df: The :class:`DataFrame` object to be converted.
-    :param cache_dir_url: A string denoting the parent directory to store
-        intermediate files. Supported schemes: file:///..., /..., hdfs:/...
-        Default None, it will fallback to the spark config
+    :param cache_dir_url: A URL string denoting the parent directory to store
+        intermediate files. Default None, it will fallback to the spark config
         "petastorm.spark.converter.defaultCacheDirUrl".
     :param parquet_row_group_size_bytes: An int denoting the number of bytes
         in a parquet row group.
