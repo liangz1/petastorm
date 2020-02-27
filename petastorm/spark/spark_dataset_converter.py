@@ -53,8 +53,7 @@ def _delete_cache_data(dataset_url):
     """
     Delete the cache data in the local file system or HDFS.
     """
-    hdfs_driver = 'libhdfs3'
-    resolver = FilesystemResolver(dataset_url, hdfs_driver)
+    resolver = FilesystemResolver(dataset_url)
     fs = resolver.filesystem()
     parsed = urlparse(dataset_url)
     try:
