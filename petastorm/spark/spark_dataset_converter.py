@@ -19,6 +19,7 @@ import threading
 import uuid
 import warnings
 
+from pyarrow import LocalFileSystem
 from pyspark.sql.session import SparkSession
 from six.moves.urllib.parse import urlparse
 
@@ -51,22 +52,21 @@ def _check_and_add_scheme(dataset_url):
 
 def _delete_cache_data(dataset_url):
     """
-    Delete the cache data in the local file system or HDFS.
+    Delete the cache data in the underlying file system.
     """
     resolver = FilesystemResolver(dataset_url)
     fs = resolver.filesystem()
     parsed = urlparse(dataset_url)
-    try:
-        if parsed.scheme.lower() == "file":
-            local_path = parsed.path
-            if os.path.exists(local_path):
-                shutil.rmtree(local_path, ignore_errors=False)
-        elif parsed.scheme.lower() == "hdfs":
-            if fs.exists(dataset_url):
-                fs.delete(dataset_url, recursive=True)
-    except BaseException as e:
-        warnings.warn(
-            "Failed to delete files at {}\n{}".format(dataset_url, str(e)))
+    if isinstance(fs, LocalFileSystem):
+        # pyarrow has a bug: LocalFileSystem.delete() is not implemented.
+        # https://issues.apache.org/jira/browse/ARROW-7953
+        # We can remove this branch once ARROW-7953 is fixed.
+        local_path = parsed.path
+        if os.path.exists(local_path):
+            shutil.rmtree(local_path, ignore_errors=False)
+    else:
+        if fs.exists(dataset_url):
+            fs.delete(dataset_url, recursive=True)
 
 
 class SparkDatasetConverter(object):
