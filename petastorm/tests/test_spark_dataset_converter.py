@@ -13,6 +13,8 @@
 # limitations under the License.
 
 import os
+import subprocess
+
 from six.moves.urllib.parse import urlparse
 import unittest
 
@@ -106,31 +108,19 @@ class TfConverterTest(unittest.TestCase):
         self.assertFalse(os.path.exists(local_path))
 
     def test_atexit(self):
-        def _run_in_new_process(cache_dir_url, output_local_dir):
-            from pyspark.sql import SparkSession
-            spark = SparkSession.builder.getOrCreate()
-            df = spark.range(10)
-            converter = make_spark_converter(df, cache_dir_url)
-            with open(output_local_dir, "w") as f:
-                f.write(converter.cache_file_path)
-                f.close()
+        cache_dir = "/tmp/spark_converter_test_atexit"
+        os.makedirs(cache_dir)
+        current_dir = os.path.dirname(os.path.realpath(__file__))
+        script_path = os.path.join(
+            current_dir, "..", "test_util", "test_atexit_script.py")
 
-        cache_dir = "file:///tmp/spark_converter_test_atexit"
-        local_output_path = "/tmp/spark_converter_test_atexit/output"
-        os.makedirs(cache_dir, exist_ok=True)
+        ret_code = subprocess.call(["python", script_path])
 
-        new_pid = os.fork()
-
-        if new_pid == 0:  # child
-            _run_in_new_process(cache_dir, local_output_path)
-            os._exit(0)
-        else:
-            _, status = os.waitpid(0, 0)
-            self.assertEqual(0, status)
-            with open(local_output_path) as f:
-                cache_file_path = f.read()
-            local_cache_file_path = urlparse(cache_file_path).path
-            self.assertFalse(os.path.exists(local_cache_file_path))
+        self.assertEqual(0, ret_code)
+        with open(os.path.join(cache_dir, "output")) as f:
+            cache_file_url = f.read()
+        cache_file_dir = urlparse(cache_file_url).path
+        self.assertFalse(os.path.exists(cache_file_dir))
 
     @staticmethod
     def _get_compression_type(data_url):
