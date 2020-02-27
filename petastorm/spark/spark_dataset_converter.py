@@ -17,7 +17,6 @@ import os
 import shutil
 import threading
 import uuid
-import warnings
 
 from pyarrow import LocalFileSystem
 from pyspark.sql.session import SparkSession
