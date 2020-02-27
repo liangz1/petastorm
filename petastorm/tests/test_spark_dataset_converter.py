@@ -107,27 +107,28 @@ class TfConverterTest(unittest.TestCase):
         self.assertFalse(os.path.exists(local_path))
 
     def test_atexit(self):
-        cache_dir = "/tmp/spark_converter_test_atexit"
-        os.makedirs(cache_dir)
-        lines = """
-        from petastorm.spark.spark_dataset_converter import make_spark_converter
-        from pyspark.sql import SparkSession
-        import os
-        spark = SparkSession.builder.getOrCreate()
-        df = spark.createDataFrame([(1, 2),(4, 5)], ["col1", "col2"])
-        converter = make_spark_converter(df, 'file:///tmp/spark_converter_test_atexit')
-        f = open("/tmp/spark_converter_test_atexit/output", "w")
-        f.write(converter.cache_file_path)
-        f.close()
-        """
-        code_str = "; ".join(
-            line.strip() for line in lines.strip().splitlines())
-        self.assertTrue(os.path.exists(cache_dir))
-        ret_code = subprocess.call(["python", "-c", code_str])
-        self.assertEqual(0, ret_code)
-        with open(os.path.join(cache_dir, "output")) as f:
+        from multiprocessing import Process
+
+        def _run_in_new_process(cache_dir_url, output_local_dir):
+            df = self.spark.range(10)
+            converter = make_spark_converter(df, cache_dir_url)
+            with open(output_local_dir, "w") as f:
+                f.write(converter.cache_file_path)
+                f.close()
+
+        cache_dir = "file:///tmp/spark_converter_test_atexit"
+        local_output_path = "/tmp/spark_converter_test_atexit/output"
+        os.makedirs(cache_dir, exist_ok=True)
+
+        p = Process(target=_run_in_new_process,
+                    args=(cache_dir, local_output_path))
+        p.start()
+        p.join()
+
+        with open(local_output_path) as f:
             cache_file_path = f.read()
-        self.assertFalse(os.path.exists(cache_file_path))
+        local_cache_file_path = urlparse(cache_file_path).path
+        self.assertFalse(os.path.exists(local_cache_file_path))
 
     @staticmethod
     def _get_compression_type(data_url):
