@@ -35,7 +35,7 @@ class TfConverterTest(unittest.TestCase):
             .master("local[2]") \
             .appName("petastorm.spark tests") \
             .getOrCreate()
-        self.spark.conf.set("spark.petastorm.converter.default.cache.dir.url",
+        self.spark.conf.set("petastorm.spark.converter.defaultCacheDirUrl",
                             "file:///tmp/123")
 
     def test_primitive(self):

@@ -218,7 +218,7 @@ def make_spark_converter(
     :param cache_dir_url: A string denoting the parent directory to store
         intermediate files. Supported schemes: file:///..., /..., hdfs:/...
         Default None, it will fallback to the spark config
-        "spark.petastorm.converter.default.cache.dir".
+        "petastorm.spark.converter.defaultCacheDirUrl".
     :param parquet_row_group_size_bytes: An int denoting the number of bytes
         in a parquet row group.
     :param compression: True or False, specify whether to apply compression.
@@ -230,12 +230,12 @@ def make_spark_converter(
     """
     if cache_dir_url is None:
         cache_dir_url = _get_spark_session().conf \
-            .get("spark.petastorm.converter.default.cache.dir.url", None)
+            .get("petastorm.spark.converter.defaultCacheDirUrl", None)
     if cache_dir_url is None:
         raise ValueError(
             "Please specify the parameter cache_url denoting the parent "
             "directory to store intermediate files, or set the spark config "
-            "`spark.petastorm.converter.default.cache.dir.url` "
+            "`petastorm.spark.converter.defaultCacheDirUrl` "
             "Supported schemes: file:///..., /..., hdfs:/...")
 
     cache_dir_url = _check_and_add_scheme(cache_dir_url)
