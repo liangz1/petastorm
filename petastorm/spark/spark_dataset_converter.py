@@ -33,23 +33,6 @@ def _get_spark_session():
     return SparkSession.builder.getOrCreate()
 
 
-def _check_and_add_scheme(dataset_url):
-    """
-    Check the scheme in the url. Only HDFS and local file system are supported.
-    Add `file://` to the url starts with `/`.
-    :param dataset_url: A string denoting the location of the cache files.
-        Supported schemes: file:///..., /..., hdfs:/...
-    :return: A string of the data_url with supported scheme.
-    """
-    parsed = urlparse(dataset_url)
-    if parsed.scheme == '':
-        parsed = parsed._replace(scheme='file')  # pylint: disable=protected-access
-    if parsed.scheme.lower() not in ["file", "hdfs"]:
-        raise NotImplementedError(
-            "Scheme {} is not supported.".format(parsed.scheme))
-    return parsed.geturl()
-
-
 def _delete_cache_data(dataset_url):
     """
     Delete the cache data in the underlying file system.
@@ -85,7 +68,7 @@ class SparkDatasetConverter(object):
         :param dataset_size: An int denoting the number of rows in the
             dataframe.
         """
-        self.cache_file_path = _check_and_add_scheme(cache_file_path)
+        self.cache_file_path = cache_file_path
         self.dataset_size = dataset_size
 
     def __len__(self):
@@ -231,14 +214,18 @@ def make_spark_converter(
     if cache_dir_url is None:
         cache_dir_url = _get_spark_session().conf \
             .get("petastorm.spark.converter.defaultCacheDirUrl", None)
+
+    scheme = urlparse(cache_dir_url).scheme
+    if not scheme:
+        raise ValueError(
+            'ERROR! A scheme-less dataset url ({}) is no longer supported. '
+            'Please prepend "file://" for local filesystem.'.format(scheme))
+
     if cache_dir_url is None:
         raise ValueError(
-            "Please specify the parameter cache_url denoting the parent "
+            "Please specify the parameter cache_dir_url denoting the parent "
             "directory to store intermediate files, or set the spark config "
-            "`petastorm.spark.converter.defaultCacheDirUrl` "
-            "Supported schemes: file:///..., /..., hdfs:/...")
-
-    cache_dir_url = _check_and_add_scheme(cache_dir_url)
+            "`petastorm.spark.converter.defaultCacheDirUrl`.")
 
     if compression is None:
         # TODO: Improve default behavior to be automatically choosing the
