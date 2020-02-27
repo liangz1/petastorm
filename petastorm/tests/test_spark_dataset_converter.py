@@ -13,16 +13,16 @@
 # limitations under the License.
 
 import os
-from six.moves.urllib.parse import urlparse
 import subprocess
 import unittest
 
 import numpy as np
 import tensorflow as tf
 from pyspark.sql import SparkSession
-from pyspark.sql.types import BinaryType, BooleanType, ByteType, DoubleType, \
-    FloatType, IntegerType, LongType, ShortType, StringType, StructField, \
-    StructType
+from pyspark.sql.types import (BinaryType, BooleanType, ByteType, DoubleType,
+                               FloatType, IntegerType, LongType, ShortType,
+                               StringType, StructField, StructType)
+from six.moves.urllib.parse import urlparse
 
 from petastorm.spark.spark_dataset_converter import make_spark_converter
 
