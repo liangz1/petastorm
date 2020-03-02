@@ -30,13 +30,13 @@ from petastorm.spark.spark_dataset_converter import _normalize_dir_url, _is_sub_
 
 class TfConverterTest(unittest.TestCase):
 
-    def setUp(self):
-        self.spark = SparkSession.builder \
-            .master("local[2]") \
-            .appName("petastorm.spark tests") \
-            .getOrCreate()
-        self.spark.conf.set("petastorm.spark.converter.defaultCacheDirUrl",
-                            "file:///tmp/123")
+    @classmethod
+    def setUpClass(cls):
+        """Child classes must override this method and define cls.spark"""
+        raise unittest.SkipTest
+
+    def tearDown(self):
+        self.spark.stop()
 
     def test_primitive(self):
         schema = StructType([
@@ -129,6 +129,7 @@ class TfConverterTest(unittest.TestCase):
         with open(os.path.join(cache_dir, "output")) as f:
             cache_dir_url = f.read()
         self.assertFalse(os.path.exists(cache_dir_url))
+        os.removedirs(cache_dir)
 
     @staticmethod
     def _get_compression_type(data_url):
@@ -243,3 +244,26 @@ class TfConverterTest(unittest.TestCase):
 
         result = self.spark.sparkContext.parallelize(range(1), 1).map(map_fn).collect()[0]
         self.assertEqual(result, 100)
+
+
+class TfConverterTestOnDelta(TfConverterTest):
+    @classmethod
+    def setUpClass(cls):
+        cls.spark = SparkSession.builder \
+            .master("local[2]") \
+            .appName("petastorm.spark delta tests") \
+            .conf("spark.jars.packages", "io.delta:delta-core_2.11:0.5.0") \
+            .getOrCreate()
+        cls.spark.conf.set("petastorm.spark.converter.defaultCacheDirUrl",
+                           "file:///tmp/123")
+
+
+class TfConverterTestOnParquet(TfConverterTest):
+    @classmethod
+    def setUpClass(cls):
+        cls.spark = SparkSession.builder \
+            .master("local[2]") \
+            .appName("petastorm.spark parquet tests") \
+            .getOrCreate()
+        cls.spark.conf.set("petastorm.spark.converter.defaultCacheDirUrl",
+                           "file:///tmp/123")
