@@ -19,6 +19,7 @@ import threading
 import uuid
 import warnings
 
+from py4j.protocol import Py4JJavaError
 from pyarrow import LocalFileSystem
 from pyspark.sql.session import SparkSession
 from six.moves.urllib.parse import urlparse
@@ -31,6 +32,15 @@ DEFAULT_ROW_GROUP_SIZE_BYTES = 32 * 1024 * 1024
 
 def _get_spark_session():
     return SparkSession.builder.getOrCreate()
+
+
+def _is_delta_available():
+    try:
+        _get_spark_session()._jvm.Class.forName(
+            "org.apache.spark.sql.delta.sources.DeltaDataSource")
+    except Py4JJavaError:
+        return False
+    return True
 
 
 def _delete_cache_data(dataset_url):
@@ -155,6 +165,7 @@ class CachedDataFrameMeta(object):
 
 _cache_df_meta_list = []
 _cache_df_meta_list_lock = threading.Lock()
+_cache_format = "parquet"
 
 
 def _normalize_dir_url(dir_url):
@@ -228,10 +239,14 @@ def _materialize_df(df, parent_cache_dir, parquet_row_group_size_bytes,
     uuid_str = str(uuid.uuid4())
     save_to_dir = os.path.join(parent_cache_dir, uuid_str)
 
+    # pylint: disable=global-statement
+    global _cache_format
+    # pylint: enable=global-statement
     df.write \
         .option("compression", compression_codec) \
         .option("parquet.block.size", parquet_row_group_size_bytes) \
-        .parquet(save_to_dir)
+        .format(_cache_format) \
+        .save(save_to_dir)
     atexit.register(_delete_cache_data_atexit, save_to_dir)
 
     return save_to_dir
@@ -262,8 +277,9 @@ def make_spark_converter(
         materialized dataframe and can be used to make one or more tensorflow
         datasets or torch dataloaders.
     """
+    spark = _get_spark_session()
     if cache_dir_url is None:
-        cache_dir_url = _get_spark_session().conf \
+        cache_dir_url = spark.conf \
             .get("petastorm.spark.converter.defaultCacheDirUrl", None)
 
     if cache_dir_url is None:
@@ -283,7 +299,15 @@ def make_spark_converter(
     else:
         compression_codec = "uncompressed"
 
+    # pylint: disable=global-statement
+    global _cache_format
+    # pylint: enable=global-statement
+    if _is_delta_available():
+        _cache_format = "delta"
+    else:
+        _cache_format = "parquet"
+
     dataset_cache_dir_url = _cache_df_or_retrieve_cache_data_url(
         df, cache_dir_url, parquet_row_group_size_bytes, compression_codec)
-    dataset_size = _get_spark_session().read.parquet(dataset_cache_dir_url).count()
+    dataset_size = spark.read.parquet(dataset_cache_dir_url).count()
     return SparkDatasetConverter(dataset_cache_dir_url, dataset_size)
