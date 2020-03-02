@@ -127,6 +127,12 @@ class _tf_dataset_context_manager(object):
         """
         from petastorm.tf_utils import make_petastorm_dataset
 
+        if _cache_format == "delta":
+            # TODO use spark.read.format("delta").load("....").inputFiles to get
+            # a list of input files directly to avoid S3 eventual consistency
+            # issue after make_batch_reader() can take a list of files.
+            pass
+        
         self.reader = make_batch_reader(data_url)
         self.dataset = make_petastorm_dataset(self.reader)
 
