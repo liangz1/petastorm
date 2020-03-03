@@ -249,7 +249,7 @@ class TfConverterTestOnDelta(TfConverterTest):
         cls.spark = SparkSession.builder \
             .master("local[2]") \
             .appName("petastorm.spark delta tests") \
-            .conf("spark.jars.packages", "io.delta:delta-core_2.11:0.5.0") \
+            .config("spark.jars.packages", "io.delta:delta-core_2.11:0.5.0") \
             .getOrCreate()
         cls.spark.conf.set("petastorm.spark.converter.defaultCacheDirUrl",
                            "file:///tmp/123")
