@@ -35,9 +35,6 @@ class TfConverterTest(unittest.TestCase):
         """Child classes must override this method and define cls.spark"""
         raise unittest.SkipTest
 
-    def tearDown(self):
-        self.spark.stop()
-
     def test_primitive(self):
         schema = StructType([
             StructField("bool_col", BooleanType(), False),
@@ -257,6 +254,10 @@ class TfConverterTestOnDelta(TfConverterTest):
         cls.spark.conf.set("petastorm.spark.converter.defaultCacheDirUrl",
                            "file:///tmp/123")
 
+    @classmethod
+    def tearDownClass(cls):
+        cls.spark.stop()
+
 
 class TfConverterTestOnParquet(TfConverterTest):
     @classmethod
@@ -267,3 +268,7 @@ class TfConverterTestOnParquet(TfConverterTest):
             .getOrCreate()
         cls.spark.conf.set("petastorm.spark.converter.defaultCacheDirUrl",
                            "file:///tmp/123")
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.spark.stop()

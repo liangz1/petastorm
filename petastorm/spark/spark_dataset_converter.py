@@ -34,13 +34,13 @@ def _get_spark_session():
     return SparkSession.builder.getOrCreate()
 
 
-def _is_delta_available():
+def _get_cache_format():
     try:
         _get_spark_session()._jvm.Class.forName(
             "org.apache.spark.sql.delta.sources.DeltaDataSource")
     except Py4JJavaError:
-        return False
-    return True
+        return "parquet"
+    return "delta"
 
 
 def _delete_cache_data(dataset_url):
@@ -127,7 +127,7 @@ class _tf_dataset_context_manager(object):
         """
         from petastorm.tf_utils import make_petastorm_dataset
 
-        if _cache_format == "delta":
+        if _get_cache_format() == "delta":
             # TODO use spark.read.format("delta").load("....").inputFiles to get
             # a list of input files directly to avoid S3 eventual consistency
             # issue after make_batch_reader() can take a list of files.
@@ -171,7 +171,6 @@ class CachedDataFrameMeta(object):
 
 _cache_df_meta_list = []
 _cache_df_meta_list_lock = threading.Lock()
-_cache_format = "parquet"
 
 
 def _normalize_dir_url(dir_url):
@@ -245,13 +244,10 @@ def _materialize_df(df, parent_cache_dir, parquet_row_group_size_bytes,
     uuid_str = str(uuid.uuid4())
     save_to_dir = os.path.join(parent_cache_dir, uuid_str)
 
-    # pylint: disable=global-statement
-    global _cache_format
-    # pylint: enable=global-statement
     df.write \
         .option("compression", compression_codec) \
         .option("parquet.block.size", parquet_row_group_size_bytes) \
-        .format(_cache_format) \
+        .format(_get_cache_format()) \
         .save(save_to_dir)
     atexit.register(_delete_cache_data_atexit, save_to_dir)
 
@@ -304,14 +300,6 @@ def make_spark_converter(
         compression_codec = "snappy"
     else:
         compression_codec = "uncompressed"
-
-    # pylint: disable=global-statement
-    global _cache_format
-    # pylint: enable=global-statement
-    if _is_delta_available():
-        _cache_format = "delta"
-    else:
-        _cache_format = "parquet"
 
     dataset_cache_dir_url = _cache_df_or_retrieve_cache_data_url(
         df, cache_dir_url, parquet_row_group_size_bytes, compression_codec)
