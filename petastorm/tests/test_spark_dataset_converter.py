@@ -106,7 +106,8 @@ class TfConverterTest(unittest.TestCase):
 
     def test_atexit(self):
         cache_dir = "/tmp/spark_converter_test_atexit"
-        os.makedirs(cache_dir)
+        if not os.path.exists(cache_dir):
+            os.makedirs(cache_dir)
         lines = """
         from petastorm.spark.spark_dataset_converter import make_spark_converter
         from pyspark.sql import SparkSession
@@ -126,7 +127,6 @@ class TfConverterTest(unittest.TestCase):
         with open(os.path.join(cache_dir, "output")) as f:
             cache_dir_url = f.read()
         self.assertFalse(os.path.exists(cache_dir_url))
-        os.removedirs(cache_dir)
 
     @staticmethod
     def _get_compression_type(data_url):
