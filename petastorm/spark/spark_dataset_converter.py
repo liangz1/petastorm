@@ -132,7 +132,7 @@ class _tf_dataset_context_manager(object):
             # a list of input files directly to avoid S3 eventual consistency
             # issue after make_batch_reader() can take a list of files.
             pass
-        
+
         self.reader = make_batch_reader(data_url)
         self.dataset = make_petastorm_dataset(self.reader)
 
