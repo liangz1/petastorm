@@ -77,7 +77,13 @@ class TfConverterTest(unittest.TestCase):
                         actual_ele = actual_ele.decode()
                     if col == "bin_col":
                         actual_ele = bytearray(actual_ele)
-                    self.assertEqual(expected_ele, actual_ele)
+
+                    if col == "float_col":
+                        self.assertAlmostEqual(expected_ele, actual_ele, places=7)
+                    elif col == "double_col":
+                        self.assertAlmostEqual(expected_ele, actual_ele, places=15)
+                    else:
+                        self.assertEqual(expected_ele, actual_ele)
 
             self.assertEqual(len(expected_df), len(converter))
 
