@@ -243,3 +243,29 @@ class TfConverterTest(unittest.TestCase):
 
         result = self.spark.sparkContext.parallelize(range(1), 1).map(map_fn).collect()[0]
         self.assertEqual(result, 100)
+
+    def test_precision(self):
+        df = self.spark.range(10)
+        df = df.withColumn("float_col", df.id.cast(FloatType())) \
+            .withColumn("double_col", df.id.cast(DoubleType()))
+
+        converter1 = make_spark_converter(df)
+        with converter1.make_tf_dataset() as dataset:
+            iterator = dataset.make_one_shot_iterator()
+            tensor = iterator.get_next()
+            with tf.Session() as sess:
+                ts = sess.run(tensor)
+        self.assertEqual(np.float32, ts.double_col.dtype.type)
+
+        converter2 = make_spark_converter(df, precision="float64")
+        with converter2.make_tf_dataset() as dataset:
+            iterator = dataset.make_one_shot_iterator()
+            tensor = iterator.get_next()
+            with tf.Session() as sess:
+                ts = sess.run(tensor)
+        self.assertEqual(np.float64, ts.float_col.dtype.type)
+
+        with self.assertRaises(ValueError) as cm:
+            make_spark_converter(df, precision="float16")
+            self.assertIn("precision float16 is not supported. \
+                Use 'float32' or float64", str(cm.exception))
