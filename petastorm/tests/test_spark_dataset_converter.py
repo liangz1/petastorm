@@ -25,14 +25,16 @@ from pyspark.sql.types import (BinaryType, BooleanType, ByteType, DoubleType,
 from six.moves.urllib.parse import urlparse
 
 from petastorm import make_spark_converter
-from petastorm.spark.spark_dataset_converter import _normalize_dir_url, _is_sub_dir_url
+from petastorm.spark.spark_dataset_converter import _normalize_dir_url, \
+    _is_sub_dir_url, _get_cache_format
 
 
 class TfConverterTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        """Child classes must override this method and define cls.spark"""
+        """Child classes must override this method and define cls.spark and
+        cls.expected_format"""
         raise unittest.SkipTest
 
     def test_primitive(self):
@@ -242,6 +244,9 @@ class TfConverterTest(unittest.TestCase):
         result = self.spark.sparkContext.parallelize(range(1), 1).map(map_fn).collect()[0]
         self.assertEqual(result, 100)
 
+    def test_cache_format(self):
+        self.assertEqual(self.expected_format, _get_cache_format())
+
 
 class TfConverterTestOnDelta(TfConverterTest):
     @classmethod
@@ -253,6 +258,7 @@ class TfConverterTestOnDelta(TfConverterTest):
             .getOrCreate()
         cls.spark.conf.set("petastorm.spark.converter.defaultCacheDirUrl",
                            "file:///tmp/123")
+        cls.expected_format = "delta"
 
     @classmethod
     def tearDownClass(cls):
@@ -268,6 +274,7 @@ class TfConverterTestOnParquet(TfConverterTest):
             .getOrCreate()
         cls.spark.conf.set("petastorm.spark.converter.defaultCacheDirUrl",
                            "file:///tmp/123")
+        cls.expected_format = "parquet"
 
     @classmethod
     def tearDownClass(cls):
