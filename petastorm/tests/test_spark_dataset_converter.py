@@ -80,7 +80,7 @@ class TfConverterTest(unittest.TestCase):
 
                     if col == "float_col" or col == "double_col":
                         # Note that the default precision is float32
-                        self.assertAlmostEqual(expected_ele, actual_ele, places=7)
+                        self.assertAlmostEqual(expected_ele, actual_ele, places=6)
                     else:
                         self.assertEqual(expected_ele, actual_ele)
 
