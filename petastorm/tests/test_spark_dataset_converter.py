@@ -80,7 +80,7 @@ class TfConverterTest(unittest.TestCase):
 
                     if col == "float_col" or col == "double_col":
                         # Note that the default precision is float32
-                        self.assertAlmostEqual(expected_ele, actual_ele, places=6)
+                        self.assertAlmostEqual(expected_ele, actual_ele, places=4)
                     else:
                         self.assertEqual(expected_ele, actual_ele)
 
@@ -90,7 +90,8 @@ class TfConverterTest(unittest.TestCase):
                          "Boolean type column is not inferred correctly.")
         self.assertEqual(np.float32, ts.float_col.dtype.type,
                          "Float type column is not inferred correctly.")
-        self.assertEqual(np.float64, ts.double_col.dtype.type,
+        # Default precision float32
+        self.assertEqual(np.float32, ts.double_col.dtype.type,
                          "Double type column is not inferred correctly.")
         self.assertEqual(np.int16, ts.short_col.dtype.type,
                          "Short type column is not inferred correctly.")
