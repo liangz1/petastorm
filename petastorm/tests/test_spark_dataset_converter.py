@@ -250,6 +250,40 @@ class TfConverterTest(unittest.TestCase):
         result = self.spark.sparkContext.parallelize(range(1), 1).map(map_fn).collect()[0]
         self.assertEqual(result, 100)
 
+    def test_tf_dataset_batch_size(self):
+        df1 = self.spark.range(100)
+
+        batch_size = 30
+        converter1 = make_spark_converter(df1)
+
+        with converter1.make_tf_dataset(batch_size) as dataset:
+            iterator = dataset.make_one_shot_iterator()
+            tensor = iterator.get_next()
+            with tf.Session() as sess:
+                ts = sess.run(tensor)
+        self.assertEqual(len(ts.id), batch_size)
+
+    def test_tf_dataset_preproc(self):
+        df1 = self.spark.createDataFrame(
+            [([1., 2., 3., 4., 5., 6.],),
+             ([4., 5., 6., 7., 8., 9.],)],
+            StructType(
+                [StructField(name='c1', dataType=ArrayType(DoubleType()))]))
+
+        converter1 = make_spark_converter(df1)
+
+        def preproc_fn(x):
+            return tf.reshape(x.c1, [-1, 3, 2]),
+
+        with converter1.make_tf_dataset(batch_size=2,
+                                        preproc_fn=preproc_fn) as dataset:
+            iterator = dataset.make_one_shot_iterator()
+            tensor = iterator.get_next()
+            with tf.Session() as sess:
+                ts = sess.run(tensor)
+
+        self.assertEqual(ts[0].shape, (2, 3, 2))
+
     def test_precision(self):
         df = self.spark.range(10)
         df = df.withColumn("float_col", df.id.cast(FloatType())) \
@@ -290,37 +324,3 @@ class TfConverterTest(unittest.TestCase):
             with tf.Session() as sess:
                 ts = sess.run(tensor)
         self.assertEqual(np.float32, ts.c1.dtype.type)
-
-    def test_tf_dataset_batch_size(self):
-        df1 = self.spark.range(100)
-
-        batch_size = 30
-        converter1 = make_spark_converter(df1)
-
-        with converter1.make_tf_dataset(batch_size) as dataset:
-            iterator = dataset.make_one_shot_iterator()
-            tensor = iterator.get_next()
-            with tf.Session() as sess:
-                ts = sess.run(tensor)
-        self.assertEqual(len(ts.id), batch_size)
-
-    def test_tf_dataset_preproc(self):
-        df1 = self.spark.createDataFrame(
-            [([1., 2., 3., 4., 5., 6.],),
-             ([4., 5., 6., 7., 8., 9.],)],
-            StructType(
-                [StructField(name='c1', dataType=ArrayType(DoubleType()))]))
-
-        converter1 = make_spark_converter(df1)
-
-        def preproc_fn(x):
-            return tf.reshape(x.c1, [-1, 3, 2]),
-
-        with converter1.make_tf_dataset(batch_size=2,
-                                        preproc_fn=preproc_fn) as dataset:
-            iterator = dataset.make_one_shot_iterator()
-            tensor = iterator.get_next()
-            with tf.Session() as sess:
-                ts = sess.run(tensor)
-
-        self.assertEqual(ts[0].shape, (2, 3, 2))
