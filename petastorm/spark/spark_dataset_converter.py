@@ -21,7 +21,7 @@ import warnings
 
 from pyarrow import LocalFileSystem
 from pyspark.sql.session import SparkSession
-from pyspark.sql.types import FloatType, DoubleType
+from pyspark.sql.types import FloatType, DoubleType, ArrayType
 from six.moves.urllib.parse import urlparse
 
 from petastorm import make_batch_reader
@@ -149,10 +149,16 @@ class CachedDataFrameMeta(object):
     @classmethod
     def create_cached_dataframe(cls, df, parent_cache_dir_url, row_group_size,
                                 compression_codec, precision):
-        meta = cls(df, row_group_size, compression_codec, precision)
+        meta = cls(df,
+                   row_group_size=row_group_size,
+                   compression_codec=compression_codec,
+                   precision=precision)
         meta.cache_dir_url = _materialize_df(
-            df, parent_cache_dir_url, row_group_size, compression_codec,
-            precision)
+            df,
+            parent_cache_dir=parent_cache_dir_url,
+            parquet_row_group_size_bytes=row_group_size,
+            compression_codec=compression_codec,
+            precision=precision)
         return meta
 
 
@@ -218,8 +224,8 @@ def _cache_df_or_retrieve_cache_data_url(
             if meta.row_group_size == parquet_row_group_size_bytes and \
                     meta.compression_codec == compression_codec and \
                     meta.df_plan.sameResult(df_plan) and \
-                    _is_sub_dir_url(meta.cache_dir_url, parent_cache_dir_url) \
-                    and meta.precision == precision:
+                    meta.precision == precision and \
+                    _is_sub_dir_url(meta.cache_dir_url, parent_cache_dir_url):
                 return meta.cache_dir_url
         # do not find cached dataframe, start materializing.
         cached_df_meta = CachedDataFrameMeta.create_cached_dataframe(
@@ -241,6 +247,9 @@ def _convert_precision(df, precision):
         col_name = struct_field.name
         if isinstance(struct_field.dataType, source_type):
             df = df.withColumn(col_name, df[col_name].cast(target_type()))
+        elif isinstance(struct_field.dataType, ArrayType) and \
+                isinstance(struct_field.dataType.elementType, source_type):
+            df = df.withColumn(col_name, df[col_name].cast(ArrayType(target_type())))
     return df
 
 

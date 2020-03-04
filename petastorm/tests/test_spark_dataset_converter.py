@@ -21,7 +21,7 @@ import tensorflow as tf
 from pyspark.sql import SparkSession
 from pyspark.sql.types import (BinaryType, BooleanType, ByteType, DoubleType,
                                FloatType, IntegerType, LongType, ShortType,
-                               StringType, StructField, StructType)
+                               StringType, StructField, StructType, ArrayType)
 from six.moves.urllib.parse import urlparse
 
 from petastorm import make_spark_converter
@@ -80,7 +80,7 @@ class TfConverterTest(unittest.TestCase):
 
                     if col == "float_col" or col == "double_col":
                         # Note that the default precision is float32
-                        self.assertAlmostEqual(expected_ele, actual_ele, places=4)
+                        self.assertAlmostEqual(expected_ele, actual_ele, delta=1e-5)
                     else:
                         self.assertEqual(expected_ele, actual_ele)
 
@@ -275,3 +275,18 @@ class TfConverterTest(unittest.TestCase):
             make_spark_converter(df, precision="float16")
             self.assertIn("precision float16 is not supported. \
                 Use 'float32' or float64", str(cm.exception))
+
+    def test_array(self):
+        df = self.spark.createDataFrame(
+            [([1., 2., 3.],)],
+            StructType([
+                StructField(name='c1', dataType=ArrayType(DoubleType()))
+            ])
+        )
+        converter1 = make_spark_converter(df)
+        with converter1.make_tf_dataset() as dataset:
+            iterator = dataset.make_one_shot_iterator()
+            tensor = iterator.get_next()
+            with tf.Session() as sess:
+                ts = sess.run(tensor)
+        self.assertEqual(np.float32, ts.c1.dtype.type)
