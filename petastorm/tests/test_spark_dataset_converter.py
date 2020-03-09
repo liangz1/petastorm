@@ -342,7 +342,7 @@ def test_torch_primitive(test_ctx):
 
     converter = make_spark_converter(df)
     batch = None
-    with converter.make_torch_dataloader() as dataloader:
+    with converter.make_torch_dataloader(num_epochs=1) as dataloader:
         for i, batch in enumerate(dataloader):
             # default batch_size = 1
             for col in df.schema.names:
@@ -368,7 +368,7 @@ def test_torch_pickling_remotely(test_ctx):
     converter1 = make_spark_converter(df1)
 
     def map_fn(_):
-        with converter1.make_torch_dataloader() as dataloader:
+        with converter1.make_torch_dataloader(num_epochs=1) as dataloader:
             for batch in dataloader:
                 ret = batch["id"][0]
         return ret
@@ -376,3 +376,29 @@ def test_torch_pickling_remotely(test_ctx):
     result = test_ctx.spark.sparkContext.parallelize(range(1), 1) \
         .map(map_fn).collect()[0]
     assert result == 100
+
+
+def test_advanced_params(test_ctx):
+    df = test_ctx.spark.range(8)
+    conv = make_spark_converter(df)
+    batch_size = 2
+    with conv.make_torch_dataloader(batch_size=batch_size,
+                                    num_epochs=1) as dataloader:
+        for batch in dataloader:
+            assert batch_size == batch['id'].shape[0]
+
+    from torchvision import transforms
+
+    def _transform_row(df_row):
+        scale_tranform = transforms.Compose([
+            transforms.Lambda(lambda x: x * 0.1),
+        ])
+        return scale_tranform(df_row)
+
+    with conv.make_torch_dataloader(preprocess_pandas_fn=_transform_row,
+                                    num_epochs=1) as dataloader:
+        for batch in dataloader:
+            assert min(batch['id']) >= 0 and max(batch['id']) < 1
+
+    with pytest.raises(TypeError, match="unexpected keyword argument 'xyz'"):
+        conv.make_torch_dataloader(xyz=1)
