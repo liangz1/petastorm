@@ -179,7 +179,6 @@ class SparkDatasetConverter(object):
                               workers_count=None,
                               cur_shard=None,
                               shard_count=None,
-                              preprocess_pandas_fn=None,
                               **petastorm_reader_kwargs):
         """
         Make a PyTorch DataLoader.
@@ -202,9 +201,6 @@ class SparkDatasetConverter(object):
             None
         :param shard_count: An int denoting the number of shards to break this
             dataset into. Defaults to None
-        :param preprocess_pandas_fn: Process one row group as a pandas
-            DataFrame/Series (single column) and return a pandas
-            DataFrame/Series
         :param petastorm_reader_kwargs: all the arguments for
             `petastorm.make_batch_reader()`.
 
@@ -218,7 +214,6 @@ class SparkDatasetConverter(object):
                                           workers_count,
                                           cur_shard,
                                           shard_count,
-                                          preprocess_pandas_fn,
                                           **petastorm_reader_kwargs)
 
     def delete(self):
@@ -288,8 +283,7 @@ class TorchDatasetContextManager(object):
     """
 
     def __init__(self, data_url, batch_size, num_epochs, workers_count,
-                 cur_shard, shard_count, preprocess_pandas_fn,
-                 **petastorm_reader_kwargs):
+                 cur_shard, shard_count, **petastorm_reader_kwargs):
         """
         :param data_url: A string specifying the data URL.
         See `SparkDatasetConverter.make_torch_dataloader()` for the definitions
@@ -302,17 +296,6 @@ class TorchDatasetContextManager(object):
             petastorm_reader_kwargs["workers_count"] = workers_count
         petastorm_reader_kwargs["cur_shard"] = cur_shard
         petastorm_reader_kwargs["shard_count"] = shard_count
-        if preprocess_pandas_fn is None:
-            # If transform_spec is provided, we respect it.
-            pass
-        elif "transform_spec" not in petastorm_reader_kwargs:
-            # If transform_spec is not provided, we use preprocess_pandas_fn.
-            transform = TransformSpec(preprocess_pandas_fn, removed_fields=[])
-            petastorm_reader_kwargs["transform_spec"] = transform
-        else:
-            # If both are provided, we respect transform_spec with a warning.
-            warnings.warn("The param `preprocess_pandas_fn` will be ignored "
-                          "when `transform_spec` is provided.")
 
         self.reader = make_batch_reader(data_url, **petastorm_reader_kwargs)
         self.loader = DataLoader(reader=self.reader, batch_size=batch_size)

@@ -388,6 +388,7 @@ def test_advanced_params(test_ctx):
             assert batch_size == batch['id'].shape[0]
 
     from torchvision import transforms
+    from petastorm import TransformSpec
 
     def _transform_row(df_row):
         scale_tranform = transforms.Compose([
@@ -395,7 +396,8 @@ def test_advanced_params(test_ctx):
         ])
         return scale_tranform(df_row)
 
-    with conv.make_torch_dataloader(preprocess_pandas_fn=_transform_row,
+    transform = TransformSpec(_transform_row)
+    with conv.make_torch_dataloader(transform_spec=transform,
                                     num_epochs=1) as dataloader:
         for batch in dataloader:
             assert min(batch['id']) >= 0 and max(batch['id']) < 1
