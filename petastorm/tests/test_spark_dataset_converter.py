@@ -306,7 +306,8 @@ def test_precision(test_ctx):
 
 def test_array(test_ctx):
     df = test_ctx.spark.createDataFrame(
-        [([1., 2., 3.],)],
+        [([1., 2., 3.],),
+         ([4., 5., 6.],)],
         StructType([
             StructField(name='c1', dataType=ArrayType(DoubleType()))
         ])
@@ -318,6 +319,31 @@ def test_array(test_ctx):
         with tf.Session() as sess:
             ts = sess.run(tensor)
     assert np.float32 == ts.c1.dtype.type
+
+
+def test_vector_to_array(test_ctx):
+    import pyspark
+    pytest.mark.skipif(
+        pyspark.__version__ < "3.0.0",
+        reason="Vector columns are not supported for pyspark {} < 3.0.0"
+               .format(pyspark.__version__))
+
+    from pyspark.ml.linalg import Vectors
+    from pyspark.mllib.linalg import Vectors as OldVectors
+    df = test_ctx.spark.createDataFrame([
+        (Vectors.dense(1.0, 2.0, 3.0), OldVectors.dense(10.0, 20.0, 30.0)),
+        (Vectors.dense(5.0, 6.0, 7.0), OldVectors.dense(50.0, 60.0, 70.0))],
+        ["vec", "oldVec"])
+    converter1 = make_spark_converter(df)
+    with converter1.make_tf_dataset() as dataset:
+        iterator = dataset.make_one_shot_iterator()
+        tensor = iterator.get_next()
+        with tf.Session() as sess:
+            ts = sess.run(tensor)
+    assert np.float32 == ts.vec.dtype.type
+    assert np.float32 == ts.oldVec.dtype.type
+    assert (2, 3) == ts.vec.shape
+    assert (2, 3) == ts.oldVec.shape
 
 
 def test_torch_primitive(test_ctx):
