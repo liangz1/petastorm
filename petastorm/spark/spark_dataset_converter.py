@@ -29,7 +29,6 @@ from six.moves.urllib.parse import urlparse
 
 from petastorm import make_batch_reader
 from petastorm.fs_utils import FilesystemResolver
-from petastorm.transform import TransformSpec
 
 DEFAULT_ROW_GROUP_SIZE_BYTES = 32 * 1024 * 1024
 
