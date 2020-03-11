@@ -326,14 +326,14 @@ def test_vector_to_array(test_ctx):
     pytest.mark.skipif(
         pyspark.__version__ < "3.0.0",
         reason="Vector columns are not supported for pyspark {} < 3.0.0"
-               .format(pyspark.__version__))
+        .format(pyspark.__version__))
 
     from pyspark.ml.linalg import Vectors
     from pyspark.mllib.linalg import Vectors as OldVectors
     df = test_ctx.spark.createDataFrame([
         (Vectors.dense(1.0, 2.0, 3.0), OldVectors.dense(10.0, 20.0, 30.0)),
         (Vectors.dense(5.0, 6.0, 7.0), OldVectors.dense(50.0, 60.0, 70.0))],
-        ["vec", "oldVec"])
+                                        ["vec", "oldVec"])
     converter1 = make_spark_converter(df)
     with converter1.make_tf_dataset() as dataset:
         iterator = dataset.make_one_shot_iterator()
