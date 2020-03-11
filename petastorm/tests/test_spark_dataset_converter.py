@@ -19,6 +19,7 @@ import tempfile
 import pytest
 
 import numpy as np
+import pyspark
 import tensorflow as tf
 from pyspark.sql import SparkSession
 from pyspark.sql.types import (ArrayType, BinaryType, BooleanType, ByteType, DoubleType,
@@ -321,13 +322,11 @@ def test_array(test_ctx):
     assert np.float32 == ts.c1.dtype.type
 
 
+@pytest.mark.skipif(
+    pyspark.__version__ < "3.0.0",
+    reason="Vector columns are not supported for pyspark {} < 3.0.0"
+    .format(pyspark.__version__))
 def test_vector_to_array(test_ctx):
-    import pyspark
-    pytest.mark.skipif(
-        pyspark.__version__ < "3.0.0",
-        reason="Vector columns are not supported for pyspark {} < 3.0.0"
-        .format(pyspark.__version__))
-
     from pyspark.ml.linalg import Vectors
     from pyspark.mllib.linalg import Vectors as OldVectors
     df = test_ctx.spark.createDataFrame([
