@@ -13,18 +13,17 @@
 # limitations under the License.
 
 import atexit
+import datetime
+import logging
 import shutil
 import threading
-import datetime
 import uuid
-import logging
 import warnings
-
 from distutils.version import LooseVersion
 
 from pyarrow import LocalFileSystem
 from pyspark.sql.session import SparkSession
-from pyspark.sql.types import FloatType, DoubleType, ArrayType
+from pyspark.sql.types import ArrayType, DoubleType, FloatType
 from six.moves.urllib.parse import urlparse
 
 from petastorm import make_batch_reader
@@ -401,7 +400,7 @@ def _convert_vector(df, precision):
         return df
 
     import pyspark
-    if pyspark.__version__ < "3.0.0":
+    if LooseVersion(pyspark.__version__) >= LooseVersion('3.0'):
         raise ValueError("Vector columns are not supported for pyspark<3.0.0.")
     # pylint: disable=import-error
     from pyspark.ml.functions import vector_to_array

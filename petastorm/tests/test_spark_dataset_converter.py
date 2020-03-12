@@ -16,22 +16,23 @@ import os
 import subprocess
 import sys
 import tempfile
-import pytest
+from distutils.version import LooseVersion
 
 import numpy as np
 import pyspark
+import pytest
 import tensorflow as tf
 from pyspark.sql import SparkSession
-from pyspark.sql.types import (ArrayType, BinaryType, BooleanType, ByteType, DoubleType,
-                               FloatType, IntegerType, LongType, ShortType,
-                               StringType, StructField, StructType)
+from pyspark.sql.types import (ArrayType, BinaryType, BooleanType, ByteType,
+                               DoubleType, FloatType, IntegerType, LongType,
+                               ShortType, StringType, StructField, StructType)
 from six.moves.urllib.parse import urlparse
 
 from petastorm.fs_utils import FilesystemResolver
-from petastorm.spark import make_spark_converter
-from petastorm.spark import spark_dataset_converter
-from petastorm.spark.spark_dataset_converter import register_delete_dir_handler, \
-    _check_url, _get_parent_cache_dir_url, _make_sub_dir_url
+from petastorm.spark import make_spark_converter, spark_dataset_converter
+from petastorm.spark.spark_dataset_converter import (
+    _check_url, _get_parent_cache_dir_url, _make_sub_dir_url,
+    register_delete_dir_handler)
 
 
 class TestContext(object):
@@ -323,7 +324,7 @@ def test_array(test_ctx):
 
 
 @pytest.mark.skipif(
-    pyspark.__version__ < "3.0.0",
+    LooseVersion(pyspark.__version__) < LooseVersion("3.0"),
     reason="Vector columns are not supported for pyspark {} < 3.0.0"
     .format(pyspark.__version__))
 def test_vector_to_array(test_ctx):
@@ -343,6 +344,8 @@ def test_vector_to_array(test_ctx):
     assert np.float32 == ts.oldVec.dtype.type
     assert (2, 3) == ts.vec.shape
     assert (2, 3) == ts.oldVec.shape
+    assert [[1., 2., 3.], [5., 6., 7.]] == ts.vec
+    assert [[10., 20., 30.], [50., 60., 70]] == ts.oldVec
 
 
 def test_torch_primitive(test_ctx):
