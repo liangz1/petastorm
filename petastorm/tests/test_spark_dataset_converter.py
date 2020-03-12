@@ -26,6 +26,7 @@ from pyspark.sql.types import (ArrayType, BinaryType, BooleanType, ByteType, Dou
                                StringType, StructField, StructType)
 from six.moves.urllib.parse import urlparse
 
+import petastorm
 from petastorm.fs_utils import FilesystemResolver
 from petastorm.spark import make_spark_converter
 from petastorm.spark import spark_dataset_converter
@@ -404,3 +405,35 @@ def test_advanced_params(test_ctx):
 
     with pytest.raises(TypeError, match="unexpected keyword argument 'xyz'"):
         conv.make_torch_dataloader(xyz=1)
+
+    class ReaderMock:
+        def __init__(self, filesystem, dataset_path, schema_fields, **kwargs):
+            self.filesystem = filesystem
+            self.dataset_path = dataset_path
+            self.schema_fields = schema_fields
+            self.kwargs = kwargs
+
+    original_reader_class = petastorm.reader.Reader
+    petastorm.reader.Reader = ReaderMock
+    ctm = conv.make_torch_dataloader(schema_fields="schema_1",
+                                     reader_pool_type='dummy',
+                                     shuffle_row_groups="row_group_1",
+                                     shuffle_row_drop_partitions="drop_1",
+                                     predicate="predicate_1",
+                                     rowgroup_selector="selector_1",
+                                     num_epochs=123,
+                                     cur_shard="shard_1",
+                                     shard_count="total_shard",
+                                     transform_spec="transform_spec_1")
+    assert ctm.reader.schema_fields == "schema_1"
+    from petastorm.workers_pool.dummy_pool import DummyPool
+    assert isinstance(ctm.reader.kwargs["reader_pool"], DummyPool)
+    assert ctm.reader.kwargs["shuffle_row_groups"] == "row_group_1"
+    assert ctm.reader.kwargs["shuffle_row_drop_partitions"] == "drop_1"
+    assert ctm.reader.kwargs["predicate"] == "predicate_1"
+    assert ctm.reader.kwargs["rowgroup_selector"] == "selector_1"
+    assert ctm.reader.kwargs["cur_shard"] == "shard_1"
+    assert ctm.reader.kwargs["shard_count"] == "total_shard"
+    assert ctm.reader.kwargs["transform_spec"] == "transform_spec_1"
+
+    petastorm.reader.Reader = original_reader_class
