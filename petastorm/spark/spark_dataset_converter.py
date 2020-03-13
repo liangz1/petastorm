@@ -27,7 +27,7 @@ from pyspark.sql.session import SparkSession
 from pyspark.sql.types import FloatType, DoubleType, ArrayType
 from six.moves.urllib.parse import urlparse
 
-from petastorm import make_batch_reader
+import petastorm
 from petastorm.fs_utils import FilesystemResolver
 
 DEFAULT_ROW_GROUP_SIZE_BYTES = 32 * 1024 * 1024
@@ -247,7 +247,7 @@ class TFDatasetContextManager(object):
         def support_prefetch_and_autotune():
             return LooseVersion(tf.__version__) >= LooseVersion('1.14')
 
-        self.reader = make_batch_reader(data_url)
+        self.reader = petastorm.make_batch_reader(data_url)
         self.dataset = make_petastorm_dataset(self.reader) \
             .flat_map(tf.data.Dataset.from_tensor_slices) \
 
@@ -296,7 +296,7 @@ class TorchDatasetContextManager(object):
         petastorm_reader_kwargs["cur_shard"] = cur_shard
         petastorm_reader_kwargs["shard_count"] = shard_count
 
-        self.reader = make_batch_reader(data_url, **petastorm_reader_kwargs)
+        self.reader = petastorm.make_batch_reader(data_url, **petastorm_reader_kwargs)
         self.loader = DataLoader(reader=self.reader, batch_size=batch_size)
 
     def __enter__(self):

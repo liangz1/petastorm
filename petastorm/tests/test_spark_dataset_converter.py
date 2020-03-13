@@ -406,34 +406,72 @@ def test_advanced_params(test_ctx):
     with pytest.raises(TypeError, match="unexpected keyword argument 'xyz'"):
         conv.make_torch_dataloader(xyz=1)
 
-    class ReaderMock:
-        def __init__(self, filesystem, dataset_path, schema_fields, **kwargs):
-            self.filesystem = filesystem
-            self.dataset_path = dataset_path
-            self.schema_fields = schema_fields
-            self.kwargs = kwargs
+    def mock_make_batch_reader(dataset_url,
+                               schema_fields=None,
+                               reader_pool_type='thread', workers_count=10,
+                               shuffle_row_groups=True, shuffle_row_drop_partitions=1,
+                               predicate=None,
+                               rowgroup_selector=None,
+                               num_epochs=1,
+                               cur_shard=None, shard_count=None,
+                               cache_type='null', cache_location=None, cache_size_limit=None,
+                               cache_row_size_estimate=None, cache_extra_settings=None,
+                               hdfs_driver='libhdfs3',
+                               transform_spec=None):
+        return {
+            "dataset_url": dataset_url,
+            "schema_fields": schema_fields,
+            "reader_pool_type": reader_pool_type,
+            "workers_count": workers_count,
+            "shuffle_row_groups": shuffle_row_groups,
+            "shuffle_row_drop_partitions": shuffle_row_drop_partitions,
+            "predicate": predicate,
+            "rowgroup_selector": rowgroup_selector,
+            "num_epochs": num_epochs,
+            "cur_shard": cur_shard,
+            "shard_count": shard_count,
+            "cache_type": cache_type,
+            "cache_location": cache_location,
+            "cache_size_limit": cache_size_limit,
+            "cache_row_size_estimate": cache_row_size_estimate,
+            "cache_extra_settings": cache_extra_settings,
+            "hdfs_driver": hdfs_driver,
+            "transform_spec": transform_spec,
+        }
 
-    original_reader_class = petastorm.reader.Reader
-    petastorm.reader.Reader = ReaderMock
+    original_fn = petastorm.make_batch_reader
+    petastorm.make_batch_reader = mock_make_batch_reader
     ctm = conv.make_torch_dataloader(schema_fields="schema_1",
-                                     reader_pool_type='dummy',
+                                     reader_pool_type='type_1',
+                                     workers_count="count_1",
                                      shuffle_row_groups="row_group_1",
                                      shuffle_row_drop_partitions="drop_1",
                                      predicate="predicate_1",
                                      rowgroup_selector="selector_1",
-                                     num_epochs=123,
+                                     num_epochs="num_1",
                                      cur_shard="shard_1",
                                      shard_count="total_shard",
+                                     cache_type="cache_1",
+                                     cache_location="location_1",
+                                     cache_size_limit="limit_1",
+                                     cache_extra_settings="extra_1",
+                                     hdfs_driver="driver_1",
                                      transform_spec="transform_spec_1")
-    assert ctm.reader.schema_fields == "schema_1"
-    from petastorm.workers_pool.dummy_pool import DummyPool
-    assert isinstance(ctm.reader.kwargs["reader_pool"], DummyPool)
-    assert ctm.reader.kwargs["shuffle_row_groups"] == "row_group_1"
-    assert ctm.reader.kwargs["shuffle_row_drop_partitions"] == "drop_1"
-    assert ctm.reader.kwargs["predicate"] == "predicate_1"
-    assert ctm.reader.kwargs["rowgroup_selector"] == "selector_1"
-    assert ctm.reader.kwargs["cur_shard"] == "shard_1"
-    assert ctm.reader.kwargs["shard_count"] == "total_shard"
-    assert ctm.reader.kwargs["transform_spec"] == "transform_spec_1"
+    assert ctm.reader["schema_fields"] == "schema_1"
+    assert ctm.reader["reader_pool_type"] == "type_1"
+    assert ctm.reader["workers_count"] == "count_1"
+    assert ctm.reader["shuffle_row_groups"] == "row_group_1"
+    assert ctm.reader["shuffle_row_drop_partitions"] == "drop_1"
+    assert ctm.reader["predicate"] == "predicate_1"
+    assert ctm.reader["rowgroup_selector"] == "selector_1"
+    assert ctm.reader["num_epochs"] == "num_1"
+    assert ctm.reader["cur_shard"] == "shard_1"
+    assert ctm.reader["shard_count"] == "total_shard"
+    assert ctm.reader["cache_type"] == "cache_1"
+    assert ctm.reader["cache_location"] == "location_1"
+    assert ctm.reader["cache_size_limit"] == "limit_1"
+    assert ctm.reader["cache_extra_settings"] == "extra_1"
+    assert ctm.reader["hdfs_driver"] == "driver_1"
+    assert ctm.reader["transform_spec"] == "transform_spec_1"
 
-    petastorm.reader.Reader = original_reader_class
+    petastorm.make_batch_reader = original_fn
