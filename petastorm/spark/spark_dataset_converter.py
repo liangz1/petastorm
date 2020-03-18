@@ -430,15 +430,11 @@ def _gen_cache_dir_name():
 
 def _convert_vector(df, precision):
     from pyspark.ml.linalg import Vector
+    from pyspark.ml.linalg import VectorUDT
     from pyspark.mllib.linalg import Vector as OldVector
 
-    types_set = {struct_field.dataType for struct_field in df.schema}
-    found_vectors = not types_set.isdisjoint({Vector, OldVector})
-    if not found_vectors:
-        return df
-
     import pyspark
-    if LooseVersion(pyspark.__version__) >= LooseVersion('3.0'):
+    if LooseVersion(pyspark.__version__) < LooseVersion('3.0'):
         raise ValueError("Vector columns are not supported for pyspark<3.0.0.")
     # pylint: disable=import-error
     from pyspark.ml.functions import vector_to_array
@@ -446,7 +442,9 @@ def _convert_vector(df, precision):
 
     for struct_field in df.schema:
         col_name = struct_field.name
-        if struct_field.dataType in {Vector, OldVector}:
+        if struct_field.dataType == Vector() or \
+                struct_field.dataType == OldVector() or \
+                struct_field.dataType == VectorUDT():
             df = df.withColumn(col_name,
                                vector_to_array(df[col_name], precision))
     return df
