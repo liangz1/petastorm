@@ -525,6 +525,7 @@ def _convert_vector(df, precision):
     from pyspark.ml.linalg import Vector
     from pyspark.ml.linalg import VectorUDT
     from pyspark.mllib.linalg import Vector as OldVector
+    from pyspark.mllib.linalg import VectorUDT as OldVectorUDT
 
     import pyspark
     if LooseVersion(pyspark.__version__) < LooseVersion('3.0'):
@@ -537,7 +538,8 @@ def _convert_vector(df, precision):
         col_name = struct_field.name
         if struct_field.dataType == Vector() or \
                 struct_field.dataType == OldVector() or \
-                struct_field.dataType == VectorUDT():
+                type(struct_field.dataType) == VectorUDT or \
+                type(struct_field.dataType) == OldVectorUDT:
             df = df.withColumn(col_name,
                                vector_to_array(df[col_name], precision))
     return df

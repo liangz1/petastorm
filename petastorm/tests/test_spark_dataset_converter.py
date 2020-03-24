@@ -323,7 +323,7 @@ def test_vector_to_array(test_ctx):
         (Vectors.dense(5.0, 6.0, 7.0), OldVectors.dense(50.0, 60.0, 70.0))],
                                         ["vec", "oldVec"])
     converter1 = make_spark_converter(df)
-    with converter1.make_tf_dataset() as dataset:
+    with converter1.make_tf_dataset(batch_size=2) as dataset:
         iterator = dataset.make_one_shot_iterator()
         tensor = iterator.get_next()
         with tf.Session() as sess:
