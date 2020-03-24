@@ -120,7 +120,7 @@ def test_dict_to_spark_row_field_validation_scalar_types():
         isinstance(dict_to_spark_row(TestSchema, {'string_field': None}), Row)
 
     # Wrong field type
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         isinstance(dict_to_spark_row(TestSchema, {'string_field': []}), Row)
 
 
@@ -293,8 +293,8 @@ def test_match_unischema_fields():
 
     assert match_unischema_fields(TestSchema, ['.*nt.*6']) == [TestSchema.uint16]
     assert match_unischema_fields(TestSchema, ['nomatch']) == []
-    assert match_unischema_fields(TestSchema, ['.*']) == list(TestSchema.fields.values())
-    assert match_unischema_fields(TestSchema, ['int32', 'uint8']) == [TestSchema.int32, TestSchema.uint8]
+    assert set(match_unischema_fields(TestSchema, ['.*'])) == set(TestSchema.fields.values())
+    assert set(match_unischema_fields(TestSchema, ['int32', 'uint8'])) == {TestSchema.int32, TestSchema.uint8}
 
 
 def test_match_unischema_fields_legacy_warning():
@@ -312,6 +312,11 @@ def test_match_unischema_fields_legacy_warning():
     # uint8 and uint16 would have been matched using the old method, but not the new one
     with pytest.warns(UserWarning, match=r'schema_fields behavior has changed.*uint16, uint8'):
         assert match_unischema_fields(TestSchema, ['uint']) == []
+
+    # Now, all fields will be matched, but in different order (legacy vs current). Make sure we don't issue a warning.
+    with pytest.warns(None) as unexpected_warnings:
+        match_unischema_fields(TestSchema, ['int', 'uint8', 'uint16', 'int32'])
+    assert not unexpected_warnings
 
 
 def test_arrow_schema_convertion():

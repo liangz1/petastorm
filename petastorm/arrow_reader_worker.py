@@ -24,6 +24,7 @@ from pyarrow.parquet import ParquetFile
 
 from petastorm.cache import NullCache
 from petastorm.compat import compat_piece_read, compat_table_columns_gen, compat_column_data
+from petastorm.unischema import Unischema, UnischemaField
 from petastorm.workers_pool import EmptyResultError
 from petastorm.workers_pool.worker_base import WorkerBase
 
@@ -67,7 +68,12 @@ class ArrowReaderWorkerResultsQueueReader(object):
                     # Assuming all lists are of the same length, hence we can collate them into a matrix
                     list_of_lists = column_as_numpy
                     try:
-                        result_dict[column_name] = np.vstack(list_of_lists.tolist())
+                        col_data = np.vstack(list_of_lists.tolist())
+                        shape = schema.fields[column_name].shape
+                        if len(shape) > 1:
+                            col_data = col_data.reshape((len(list_of_lists),) + shape)
+                        result_dict[column_name] = col_data
+
                     except ValueError:
                         raise RuntimeError('Length of all values in column \'{}\' are expected to be the same length. '
                                            'Got the following set of lengths: \'{}\''
@@ -87,12 +93,13 @@ class ArrowReaderWorker(WorkerBase):
         super(ArrowReaderWorker, self).__init__(worker_id, publish_func, args)
 
         self._filesystem = args[0]
-        self._dataset_path = args[1]
+        self._dataset_path_or_paths = args[1]
         self._schema = args[2]
         self._ngram = args[3]
         self._split_pieces = args[4]
         self._local_cache = args[5]
         self._transform_spec = args[6]
+        self._transformed_schema = args[7]
 
         if self._ngram:
             raise NotImplementedError('ngrams are not supported by ArrowReaderWorker')
@@ -104,6 +111,17 @@ class ArrowReaderWorker(WorkerBase):
     @staticmethod
     def new_results_queue_reader():
         return ArrowReaderWorkerResultsQueueReader()
+
+    def _init_dataset(self):
+        if not self._dataset:
+            self._dataset = pq.ParquetDataset(
+                self._dataset_path_or_paths,
+                filesystem=self._filesystem,
+                validate_schema=False)
+            if self._dataset.partitions is None:
+                # When read from parquet file list, the `dataset.partitions` will be None.
+                # But other petastorm code require at least an empty `ParquetPartitions` object.
+                self._dataset.partitions = pq.ParquetPartitions()
 
     # pylint: disable=arguments-differ
     def process(self, piece_index, worker_predicate, shuffle_row_drop_partition):
@@ -118,12 +136,7 @@ class ArrowReaderWorker(WorkerBase):
             of partitions.
         :return:
         """
-
-        if not self._dataset:
-            self._dataset = pq.ParquetDataset(
-                self._dataset_path,
-                filesystem=self._filesystem,
-                validate_schema=False)
+        self._init_dataset()
 
         piece = self._split_pieces[piece_index]
 
@@ -145,13 +158,61 @@ class ArrowReaderWorker(WorkerBase):
             #  2. Dataset path is hashed, to make sure we don't create too long keys, which maybe incompatible with
             #     some cache implementations
             #  3. Still leave relative path and the piece_index in plain text to make it easier to debug
-            cache_key = '{}:{}:{}'.format(hashlib.md5(self._dataset_path.encode('utf-8')).hexdigest(),
+            if isinstance(self._dataset_path_or_paths, list):
+                path_str = ','.join(self._dataset_path_or_paths)
+            else:
+                path_str = self._dataset_path_or_paths
+            cache_key = '{}:{}:{}'.format(hashlib.md5(path_str.encode('utf-8')).hexdigest(),
                                           piece.path, piece_index)
             all_cols = self._local_cache.get(cache_key,
                                              lambda: self._load_rows(parquet_file, piece, shuffle_row_drop_partition))
 
         if all_cols:
             self.publish_func(all_cols)
+
+    def infer_schema_from_first_row(self):
+        self._init_dataset()
+
+        piece0 = self._split_pieces[0]
+        pq_file0 = ParquetFile(self._dataset.fs.open(piece0.path))
+
+        column_names = [field_name for field_name in self._schema.fields]
+
+        piece0_pdf = self._read_piece(piece0, pq_file0, set(column_names)).to_pandas()
+
+        row0_pdf = piece0_pdf.head(n=1)
+        if self._transform_spec:
+            row0_pdf = self._transform_spec.func(row0_pdf)
+
+        unischema_fields = []
+        for field_name in column_names:
+            field_val = row0_pdf[field_name][0]
+
+            if np.ndim(field_val) == 0:
+                # scalar value
+                field_shape = ()
+                field_numpy_type = np.dtype(type(field_val)).type
+            else:
+                field_shape = field_val.shape
+                field_numpy_type = field_val.dtype.type
+
+            # TODO: add type checking,raise error for illegal type (such as np.object_)
+            unischema_field = UnischemaField(field_name, field_numpy_type, field_shape, None, False)
+            unischema_fields.append(unischema_field)
+
+        return Unischema('inferred_schema', unischema_fields)
+
+    @staticmethod
+    def _check_shape_and_ravel(x, field):
+        if not isinstance(x, np.ndarray):
+            raise ValueError('field {name} must be numpy array type.'.format(name=field.name))
+        if x.shape != field.shape:
+            raise ValueError('field {name} must be the shape {shape}'
+                             .format(name=field.name, shape=field.shape))
+        if not x.flags.c_contiguous:
+            raise ValueError('field {name} error: only support row major multi-dimensional array.'
+                             .format(name=field.name))
+        return x.ravel()
 
     def _load_rows(self, pq_file, piece, shuffle_row_drop_range):
         """Loads all rows from a piece"""
@@ -173,6 +234,22 @@ class ArrowReaderWorker(WorkerBase):
             # TransformSpec(removed_fields=['some field'])
             for field_to_remove in set(transformed_result.columns) & set(self._transform_spec.removed_fields):
                 del transformed_result[field_to_remove]
+
+            transformed_result_column_set = set(transformed_result.columns)
+            transformed_schema_column_set = set([f.name for f in self._transformed_schema.fields.values()])
+
+            if transformed_result_column_set != transformed_schema_column_set:
+                raise ValueError('Transformed result columns ({rc}) do not match required schema columns({sc})'
+                                 .format(rc=','.join(transformed_result_column_set),
+                                         sc=','.join(transformed_schema_column_set)))
+
+            # For fields return multidimensional array, we need to ravel them
+            # because pyarrow do not support multidimensional array.
+            # later we will reshape it back.
+            for field in self._transformed_schema.fields.values():
+                if len(field.shape) > 1:
+                    transformed_result[field.name] = transformed_result[field.name] \
+                        .map(lambda x, f=field: self._check_shape_and_ravel(x, f))
 
             result = pa.Table.from_pandas(transformed_result, preserve_index=False)
 
@@ -239,7 +316,7 @@ class ArrowReaderWorker(WorkerBase):
 
         return pa.Table.from_pandas(result, preserve_index=False)
 
-    def _read_with_shuffle_row_drop(self, piece, pq_file, column_names, shuffle_row_drop_partition):
+    def _read_piece(self, piece, pq_file, column_names):
         partition_names = self._dataset.partitions.partition_names
 
         # pyarrow would fail if we request a column names that the dataset is partitioned by
@@ -253,6 +330,10 @@ class ArrowReaderWorker(WorkerBase):
         unasked_for_columns = loaded_column_names - column_names
         if unasked_for_columns:
             table = table.drop(unasked_for_columns)
+        return table
+
+    def _read_with_shuffle_row_drop(self, piece, pq_file, column_names, shuffle_row_drop_partition):
+        table = self._read_piece(piece, pq_file, column_names)
 
         num_rows = len(table)
         num_partitions = shuffle_row_drop_partition[1]

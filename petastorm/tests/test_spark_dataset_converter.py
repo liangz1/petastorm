@@ -22,6 +22,8 @@ import numpy as np
 import pyspark
 import pytest
 import tensorflow as tf
+
+from petastorm import make_batch_reader
 from pyspark.sql import SparkSession
 from pyspark.sql.types import (ArrayType, BinaryType, BooleanType, ByteType,
                                DoubleType, FloatType, IntegerType, LongType,
@@ -33,7 +35,12 @@ from petastorm.fs_utils import FilesystemResolver
 from petastorm.spark import make_spark_converter, spark_dataset_converter
 from petastorm.spark.spark_dataset_converter import (
     _check_url, _get_parent_cache_dir_url, _make_sub_dir_url,
-    register_delete_dir_handler)
+    register_delete_dir_handler, _get_horovod_rank_and_size, _is_rank_and_size_consistent_with_horovod)
+
+try:
+    from mock import mock
+except ImportError:
+    from unittest import mock
 
 
 class TestContext(object):
@@ -253,32 +260,12 @@ def test_tf_dataset_batch_size(test_ctx):
     batch_size = 30
     converter1 = make_spark_converter(df1)
 
-    with converter1.make_tf_dataset(batch_size) as dataset:
+    with converter1.make_tf_dataset(batch_size=batch_size) as dataset:
         iterator = dataset.make_one_shot_iterator()
         tensor = iterator.get_next()
         with tf.Session() as sess:
             ts = sess.run(tensor)
     assert len(ts.id) == batch_size
-
-
-def test_tf_dataset_preproc(test_ctx):
-    df1 = test_ctx.spark.createDataFrame(
-        [([1., 2., 3., 4., 5., 6.],),
-         ([4., 5., 6., 7., 8., 9.],)],
-        StructType([StructField(name='c1', dataType=ArrayType(DoubleType()))]))
-
-    converter1 = make_spark_converter(df1)
-
-    def preproc_fn(x):
-        return tf.reshape(x.c1, [-1, 3, 2]),
-
-    with converter1.make_tf_dataset(batch_size=2, preproc_fn=preproc_fn) as dataset:
-        iterator = dataset.make_one_shot_iterator()
-        tensor = iterator.get_next()
-        with tf.Session() as sess:
-            ts = sess.run(tensor)
-
-    assert ts[0].shape == (2, 3, 2)
 
 
 def test_precision(test_ctx):
@@ -434,72 +421,40 @@ def test_advanced_params(test_ctx):
     with pytest.raises(TypeError, match="unexpected keyword argument 'xyz'"):
         conv.make_torch_dataloader(xyz=1)
 
-    def mock_make_batch_reader(dataset_url,
-                               schema_fields=None,
-                               reader_pool_type='thread', workers_count=10,
-                               shuffle_row_groups=True, shuffle_row_drop_partitions=1,
-                               predicate=None,
-                               rowgroup_selector=None,
-                               num_epochs=1,
-                               cur_shard=None, shard_count=None,
-                               cache_type='null', cache_location=None, cache_size_limit=None,
-                               cache_row_size_estimate=None, cache_extra_settings=None,
-                               hdfs_driver='libhdfs3',
-                               transform_spec=None):
-        return {
-            "dataset_url": dataset_url,
-            "schema_fields": schema_fields,
-            "reader_pool_type": reader_pool_type,
-            "workers_count": workers_count,
-            "shuffle_row_groups": shuffle_row_groups,
-            "shuffle_row_drop_partitions": shuffle_row_drop_partitions,
-            "predicate": predicate,
-            "rowgroup_selector": rowgroup_selector,
-            "num_epochs": num_epochs,
-            "cur_shard": cur_shard,
-            "shard_count": shard_count,
-            "cache_type": cache_type,
-            "cache_location": cache_location,
-            "cache_size_limit": cache_size_limit,
-            "cache_row_size_estimate": cache_row_size_estimate,
-            "cache_extra_settings": cache_extra_settings,
-            "hdfs_driver": hdfs_driver,
-            "transform_spec": transform_spec,
-        }
 
-    original_fn = petastorm.make_batch_reader
-    petastorm.make_batch_reader = mock_make_batch_reader
-    ctm = conv.make_torch_dataloader(schema_fields="schema_1",
-                                     reader_pool_type='type_1',
-                                     workers_count="count_1",
-                                     shuffle_row_groups="row_group_1",
-                                     shuffle_row_drop_partitions="drop_1",
-                                     predicate="predicate_1",
-                                     rowgroup_selector="selector_1",
-                                     num_epochs="num_1",
-                                     cur_shard="shard_1",
-                                     shard_count="total_shard",
-                                     cache_type="cache_1",
-                                     cache_location="location_1",
-                                     cache_size_limit="limit_1",
-                                     cache_extra_settings="extra_1",
-                                     hdfs_driver="driver_1",
-                                     transform_spec="transform_spec_1")
-    assert ctm.reader["schema_fields"] == "schema_1"
-    assert ctm.reader["reader_pool_type"] == "type_1"
-    assert ctm.reader["workers_count"] == "count_1"
-    assert ctm.reader["shuffle_row_groups"] == "row_group_1"
-    assert ctm.reader["shuffle_row_drop_partitions"] == "drop_1"
-    assert ctm.reader["predicate"] == "predicate_1"
-    assert ctm.reader["rowgroup_selector"] == "selector_1"
-    assert ctm.reader["num_epochs"] == "num_1"
-    assert ctm.reader["cur_shard"] == "shard_1"
-    assert ctm.reader["shard_count"] == "total_shard"
-    assert ctm.reader["cache_type"] == "cache_1"
-    assert ctm.reader["cache_location"] == "location_1"
-    assert ctm.reader["cache_size_limit"] == "limit_1"
-    assert ctm.reader["cache_extra_settings"] == "extra_1"
-    assert ctm.reader["hdfs_driver"] == "driver_1"
-    assert ctm.reader["transform_spec"] == "transform_spec_1"
+@mock.patch('petastorm.spark.spark_dataset_converter.make_batch_reader')
+def test_tf_dataset_petastorm_args(mock_make_batch_reader, test_ctx):
+    df1 = test_ctx.spark.range(100).repartition(4)
+    conv1 = make_spark_converter(df1)
 
-    petastorm.make_batch_reader = original_fn
+    mock_make_batch_reader.return_value = make_batch_reader(conv1.cache_dir_url)
+
+    with conv1.make_tf_dataset(reader_pool_type='dummy', cur_shard=1, shard_count=4):
+        pass
+    peta_args = mock_make_batch_reader.call_args.kwargs
+    assert peta_args['reader_pool_type'] == 'dummy' and \
+        peta_args['cur_shard'] == 1 and \
+        peta_args['shard_count'] == 4 and \
+        peta_args['num_epochs'] is None and \
+        peta_args['workers_count'] == 4
+
+    with conv1.make_tf_dataset(num_epochs=1, workers_count=2):
+        pass
+    peta_args = mock_make_batch_reader.call_args.kwargs
+    assert peta_args['num_epochs'] == 1 and peta_args['workers_count'] == 2
+
+
+def test_horovod_rank_compatibility(test_ctx):
+    with mock.patch.dict(os.environ, {'HOROVOD_RANK': '1', 'HOROVOD_SIZE': '3'}, clear=True):
+        assert (1, 3) == _get_horovod_rank_and_size()
+    with mock.patch.dict(os.environ, {'OMPI_COMM_WORLD_RANK': '1', 'OMPI_COMM_WORLD_SIZE': '3'}, clear=True):
+        assert (1, 3) == _get_horovod_rank_and_size()
+    with mock.patch.dict(os.environ, {'PMI_RANK': '1', 'PMI_SIZE': '3'}, clear=True):
+        assert (1, 3) == _get_horovod_rank_and_size()
+    with mock.patch.dict(os.environ, {}, clear=True):
+        assert (None, None) == _get_horovod_rank_and_size()
+
+    assert _is_rank_and_size_consistent_with_horovod(cur_shard=1, shard_count=3, hvd_rank=1, hvd_size=3)
+    assert _is_rank_and_size_consistent_with_horovod(cur_shard=1, shard_count=3, hvd_rank=None, hvd_size=None)
+    assert not _is_rank_and_size_consistent_with_horovod(cur_shard=1, shard_count=2, hvd_rank=1, hvd_size=3)
+    assert not _is_rank_and_size_consistent_with_horovod(cur_shard=0, shard_count=3, hvd_rank=1, hvd_size=3)

@@ -15,6 +15,7 @@
 import atexit
 import datetime
 import logging
+import os
 import shutil
 import threading
 import uuid
@@ -26,10 +27,13 @@ from pyspark.sql.session import SparkSession
 from pyspark.sql.types import ArrayType, DoubleType, FloatType
 from six.moves.urllib.parse import urlparse
 
-import petastorm
+from petastorm import make_batch_reader
 from petastorm.fs_utils import FilesystemResolver
+from petastorm.transform import TransformSpec
 
 DEFAULT_ROW_GROUP_SIZE_BYTES = 32 * 1024 * 1024
+
+logger = logging.getLogger(__name__)
 
 
 def _get_spark_session():
@@ -47,7 +51,7 @@ def _get_parent_cache_dir_url():
     global _parent_cache_dir_url  # pylint: disable=global-statement
 
     conf_url = _get_spark_session().conf \
-        .get("petastorm.spark.converter.parentCacheDirUrl", None)
+        .get(SparkDatasetConverter.PARENT_CACHE_DIR_URL_CONF, None)
 
     if conf_url is None:
         raise ValueError(
@@ -63,7 +67,7 @@ def _get_parent_cache_dir_url():
     else:
         _check_url(conf_url)
         _parent_cache_dir_url = conf_url
-        logging.info(
+        logger.info(
             'Read petastorm.spark.converter.parentCacheDirUrl %s', _parent_cache_dir_url)
 
     return _parent_cache_dir_url
@@ -114,6 +118,36 @@ def _delete_cache_data_atexit(dataset_url):
         warnings.warn('delete cache data {url} failed.'.format(url=dataset_url))
 
 
+def _get_horovod_rank_and_size():
+    """
+    Get rank and size from environment, return (rank, size), if failed, return (None, None)
+    """
+    rank_env = ['HOROVOD_RANK', 'OMPI_COMM_WORLD_RANK', 'PMI_RANK']
+    size_env = ['HOROVOD_SIZE', 'OMPI_COMM_WORLD_SIZE', 'PMI_SIZE']
+
+    for rank_var, size_var in zip(rank_env, size_env):
+        rank = os.environ.get(rank_var)
+        size = os.environ.get(size_var)
+        if rank is not None and size is not None:
+            return int(rank), int(size)
+        elif rank is not None or size is not None:
+            return None, None
+
+    return None, None
+
+
+def _is_rank_and_size_consistent_with_horovod(cur_shard, shard_count, hvd_rank, hvd_size):
+    """
+    Check whether the cur_shard and shard_count args are consistent with horovod environment variables.
+    If not consistent with horovod environment variables, return False.
+    If there're no related horovod environment variable set, return True.
+    """
+    if hvd_rank is not None and hvd_size is not None:
+        if cur_shard != hvd_rank or shard_count != hvd_size:
+            return False
+    return True
+
+
 class SparkDatasetConverter(object):
     """
     A `SparkDatasetConverter` object holds one materialized spark dataframe and
@@ -122,6 +156,8 @@ class SparkDatasetConverter(object):
     processes.
     See `make_spark_converter`
     """
+
+    PARENT_CACHE_DIR_URL_CONF = 'petastorm.spark.converter.parentCacheDirUrl'
 
     def __init__(self, cache_dir_url, dataset_size):
         """
@@ -139,11 +175,15 @@ class SparkDatasetConverter(object):
         """
         return self.dataset_size
 
-    def make_tf_dataset(self,
-                        batch_size=32,
-                        prefetch=None,
-                        preproc_fn=None,
-                        preproc_parallelism=None):
+    def make_tf_dataset(
+            self,
+            batch_size=None,
+            prefetch=None,
+            num_epochs=None,
+            workers_count=None,
+            preprocess_fn=None,
+            **petastorm_reader_kwargs
+    ):
         """
         Make a tensorflow dataset.
 
@@ -151,24 +191,74 @@ class SparkDatasetConverter(object):
           1) Open a petastorm reader on the materialized dataset dir.
           2) Create a tensorflow dataset based on the reader created in (1)
 
-        :param batch_size: batch size of the generated tf.data.dataset
-        :param prefetch: prefetch for tf dataset, if None, will use autotune prefetch
-                         if available, if 0, disable prefetch. Default is None.
-        :param preproc_fn: preprocessing function, will apply on batched tf tensor.
-        :param preproc_parallelism: parallelism for preprocessing function.
-                                    If None, will autotune best parallelism if available.
-                                    If tf do not support autotune, fallback to 1.
+        The generated dataset each element will be a batch of namedtuples.
+        If without specifying `preprocess_fn`, each namedtuple in result dataset will match the
+        schema of the original spark dataframe columns, otherwise will match the columns of the
+        output pandas dataframe of `preprocess_fn`. The fields order will keep the same with
+        original spark dataframe columns or the output pandas dataframe of `preprocess_fn`.
+
+        :param batch_size: The number of items to return per batch. Default None.
+            If None, current implementation will set batch size to be 32, in future,
+            None value will denotes auto tuned best value for batch size.
+        :param prefetch: Prefetch size for tensorflow dataset. If None will use
+            tensorflow autotune size. Note only available on tensorflow>=1.14
+        :param num_epochs: An epoch is a single pass over all rows in the dataset.
+            Setting ``num_epochs`` to ``None`` will result in an infinite number
+            of epochs.
+        :param workers_count: An int for the number of workers to use in the
+            reader pool. This only is used for the thread or process pool.
+            None denotes auto tune best value (current implementation when auto tune,
+            it will always use 4 workers, but it may be improved in future)
+            Default value None.
+        :param preprocess_fn: Preprocessing function. Input is pandas dataframe of
+            a rowgroup data and output should be the transformed pandas dataframe.
+            the column order of the input pandas dataframe is undefined, but the output
+            pandas dataframe column order will determine the result tensorflow dataset's
+            element fields order.
+        :param petastorm_reader_kwargs: arguments for `petastorm.make_batch_reader()`,
+            exclude these arguments: "dataset_url_or_urls", "num_epochs", "workers_count",
+            "transform_spec", "infer_schema_from_first_row"
 
         :return: a context manager for a `tf.data.Dataset` object.
                  when exit the returned context manager, the reader
                  will be closed.
         """
+
+        # override some arguments default values of petastorm reader
+        petastorm_reader_kwargs['num_epochs'] = num_epochs
+        if workers_count is None:
+            # TODO: generate a best tuned value for default worker count value
+            workers_count = 4
+        petastorm_reader_kwargs['workers_count'] = workers_count
+
+        if 'dataset_url_or_urls' in petastorm_reader_kwargs:
+            raise ValueError('User cannot set dataset_url_or_urls argument.')
+
+        if 'transform_spec' in petastorm_reader_kwargs or \
+                'infer_schema_from_first_row' in petastorm_reader_kwargs:
+            raise ValueError('User cannot set transform_spec and infer_schema_from_first_row '
+                             'arguments, use `preprocess_fn` argument instead.')
+
+        petastorm_reader_kwargs['infer_schema_from_first_row'] = True
+        if preprocess_fn:
+            petastorm_reader_kwargs['transform_spec'] = TransformSpec(preprocess_fn)
+
+        hvd_rank, hvd_size = _get_horovod_rank_and_size()
+        cur_shard = petastorm_reader_kwargs.get('cur_shard')
+        shard_count = petastorm_reader_kwargs.get('shard_count')
+
+        if not _is_rank_and_size_consistent_with_horovod(cur_shard, shard_count, hvd_rank, hvd_size):
+            logger.warning('The petastorm reader arguments cur_shard(%d) and shard_count(%d) '
+                           'is not consistent with horovod environments hvd_rank(%d) and hvd_size(%d), '
+                           'If you want each horovod worker train on one corresponding shard data, you should set '
+                           'argument `cur_shard` to be `hvd.rank()` and argument `shard_count` to be `hvd.size()`.',
+                           cur_shard, shard_count, hvd_rank, hvd_size)
+
         return TFDatasetContextManager(
             self.cache_dir_url,
             batch_size=batch_size,
             prefetch=prefetch,
-            preproc_fn=preproc_fn,
-            preproc_parallelism=preproc_parallelism
+            petastorm_reader_kwargs=petastorm_reader_kwargs
         )
 
     def make_torch_dataloader(self,
@@ -227,47 +317,50 @@ class TFDatasetContextManager(object):
     :class:`petastorm.Reader`.
     """
 
-    def __init__(self,
-                 data_url,
-                 batch_size,
-                 prefetch,
-                 preproc_fn,
-                 preproc_parallelism):
+    def __init__(
+            self,
+            data_url,
+            batch_size,
+            prefetch,
+            petastorm_reader_kwargs
+    ):
         """
         :param data_url: A string specifying the data URL.
-        :param batch_size: batch size of the generated tf.data.dataset
-        :param prefetch: prefetch for tf dataset
-        :param preproc_fn: preprocessing function
-        :param preproc_parallelism: parallelism for preprocessing function
+        :param batch_size: batch size for tensorflow dataset.
+        :param prefetch: the prefectch size for tensorflow dataset.
+        :param petastorm_reader_kwargs: other arguments for petastorm reader
         """
+        self.data_url = data_url
+        self.batch_size = batch_size
+        self.prefetch = prefetch
+        self.petastorm_reader_kwargs = petastorm_reader_kwargs
+
+    def __enter__(self):
+        # import locally to avoid importing tensorflow globally.
         from petastorm.tf_utils import make_petastorm_dataset
         import tensorflow as tf
 
-        def support_prefetch_and_autotune():
-            return LooseVersion(tf.__version__) >= LooseVersion('1.14')
+        self.reader = make_batch_reader(self.data_url, **self.petastorm_reader_kwargs)
 
-        self.reader = petastorm.make_batch_reader(data_url)
-        self.dataset = make_petastorm_dataset(self.reader) \
-            .flat_map(tf.data.Dataset.from_tensor_slices) \
+        # unroll dataset
+        dataset = make_petastorm_dataset(self.reader).flat_map(tf.data.Dataset.from_tensor_slices)
 
-        self.dataset = self.dataset.batch(batch_size=batch_size)
+        # TODO: auto tune best batch size in default case.
+        batch_size = self.batch_size or 32
+        dataset = dataset.batch(batch_size=batch_size)
 
-        if support_prefetch_and_autotune():
-            if prefetch is None:
+        prefetch = self.prefetch
+
+        if prefetch is None:
+            if LooseVersion(tf.__version__) >= LooseVersion('1.14'):
+                # We can make prefetch optimization
                 prefetch = tf.data.experimental.AUTOTUNE
-            if prefetch != 0:
-                self.dataset = self.dataset.prefetch(prefetch)
+            else:
+                prefetch = 1
 
-        if preproc_fn is not None:
-            if preproc_parallelism is None:
-                if support_prefetch_and_autotune():
-                    preproc_parallelism = tf.data.experimental.AUTOTUNE
-                else:
-                    preproc_parallelism = 1
-            self.dataset = self.dataset.map(preproc_fn, preproc_parallelism)
+        dataset = dataset.prefetch(prefetch)
 
-    def __enter__(self):
-        return self.dataset
+        return dataset
 
     def __exit__(self, exc_type, exc_value, exc_traceback):
         self.reader.stop()
@@ -295,7 +388,7 @@ class TorchDatasetContextManager(object):
         petastorm_reader_kwargs["cur_shard"] = cur_shard
         petastorm_reader_kwargs["shard_count"] = shard_count
 
-        self.reader = petastorm.make_batch_reader(data_url, **petastorm_reader_kwargs)
+        self.reader = make_batch_reader(data_url, **petastorm_reader_kwargs)
         self.loader = DataLoader(reader=self.reader, batch_size=batch_size)
 
     def __enter__(self):
@@ -462,7 +555,7 @@ def _materialize_df(df, parent_cache_dir_url, parquet_row_group_size_bytes,
         .option("parquet.block.size", parquet_row_group_size_bytes) \
         .parquet(save_to_dir_url)
 
-    logging.info('Materialize dataframe to url %s successfully.', save_to_dir_url)
+    logger.info('Materialize dataframe to url %s successfully.', save_to_dir_url)
 
     atexit.register(_delete_cache_data_atexit, save_to_dir_url)
 
@@ -476,7 +569,8 @@ def make_spark_converter(
         precision='float32'):
     """
     Convert a spark dataframe into a :class:`SparkDatasetConverter` object.
-    It will materialize a spark dataframe to a `cache_dir_url`.
+    It will materialize a spark dataframe to the directory specified by
+    spark conf 'petastorm.spark.converter.parentCacheDirUrl'.
     The dataframe will be materialized in parquet format, and we can specify
     `parquet_row_group_size_bytes` and `compression_codec` for the parquet
     format. See params documentation for details.
