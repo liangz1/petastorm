@@ -323,17 +323,21 @@ def test_vector_to_array(test_ctx):
         (Vectors.dense(5.0, 6.0, 7.0), OldVectors.dense(50.0, 60.0, 70.0))],
                                         ["vec", "oldVec"])
     converter1 = make_spark_converter(df)
-    with converter1.make_tf_dataset(batch_size=2) as dataset:
+    with converter1.make_tf_dataset(num_epochs=1) as dataset:
         iterator = dataset.make_one_shot_iterator()
         tensor = iterator.get_next()
         with tf.Session() as sess:
             ts = sess.run(tensor)
     assert np.float32 == ts.vec.dtype.type
     assert np.float32 == ts.oldVec.dtype.type
+    vec_col = ts.vec[ts.vec[:, 0].argsort()]
+    old_vec_col = ts.oldVec[ts.oldVec[:, 0].argsort()]
     assert (2, 3) == ts.vec.shape
     assert (2, 3) == ts.oldVec.shape
-    assert [[1., 2., 3.], [5., 6., 7.]] == ts.vec
-    assert [[10., 20., 30.], [50., 60., 70]] == ts.oldVec
+    assert ([1., 2., 3.] == vec_col[0]).all() and \
+           ([5., 6., 7.] == vec_col[1]).all()
+    assert ([10., 20., 30.] == old_vec_col[0]).all() and \
+           ([50., 60., 70] == old_vec_col[1]).all()
 
 
 def test_torch_primitive(test_ctx):
